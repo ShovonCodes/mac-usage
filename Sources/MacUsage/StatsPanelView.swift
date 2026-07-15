@@ -49,12 +49,36 @@ struct StatsPanelView: View {
         }
         // Tell the store when the panel opens/closes so it can switch
         // between the fast (2s) and idle (15s) refresh intervals.
-        .onAppear { statsStore.panelDidOpen() }
+        .onAppear {
+            statsStore.panelDidOpen()
+            // One runloop tick later the window exists and macOS has
+            // placed it — then nudge it under the icon.
+            DispatchQueue.main.async { centerPanelUnderStatusItem() }
+        }
         .onDisappear {
             detailPanelController.hide()
             expandedSection = nil
             statsStore.panelDidClose()
         }
+    }
+
+    /// MenuBarExtra positions its window left-aligned to the status
+    /// item; move it so it's centered under the icon instead (clamped
+    /// to the screen edge).
+    private func centerPanelUnderStatusItem() {
+        guard let panelWindow = hostView?.window else { return }
+        // The status item lives in its own tiny window at menu bar
+        // height — the only other window this app owns up there.
+        guard let iconFrame = NSApp.windows.first(where: {
+            $0 !== panelWindow && $0.className.contains("StatusBarWindow")
+        })?.frame else { return }
+        guard let screen = panelWindow.screen ?? NSScreen.main else { return }
+
+        let margin: CGFloat = 8
+        var x = iconFrame.midX - panelWindow.frame.width / 2
+        x = max(screen.visibleFrame.minX + margin,
+                min(x, screen.visibleFrame.maxX - panelWindow.frame.width - margin))
+        panelWindow.setFrameOrigin(NSPoint(x: x, y: panelWindow.frame.origin.y))
     }
 
     private var memoryDetailContent: some View {
