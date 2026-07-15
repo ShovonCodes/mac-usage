@@ -85,15 +85,93 @@ final class DetailPanelController {
 }
 
 /// Grabs the NSView SwiftUI hosts this background in, so the panel
-/// controller can find the menu bar panel's window.
+/// controller can find the menu bar panel's window. Reports the
+/// window as soon as the view lands in one — before first draw.
 struct HostingViewAccessor: NSViewRepresentable {
     @Binding var view: NSView?
+    var onWindowAvailable: ((NSWindow) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSView {
-        let nsView = NSView()
+        let nsView = WindowObservingView()
+        nsView.onWindowAvailable = onWindowAvailable
         DispatchQueue.main.async { self.view = nsView }
         return nsView
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? WindowObservingView)?.onWindowAvailable = onWindowAvailable
+    }
+}
+
+final class WindowObservingView: NSView {
+    var onWindowAvailable: ((NSWindow) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            onWindowAvailable?(window)
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Keeps the menu bar panel centered under the status item icon.
+//
+// MenuBarExtra opens its window edge-aligned to the status item and
+// re-places it on every open. Repositioning after the fact flickers,
+// so instead this watches the window's move notifications and
+// re-centers the moment the system places it — same runloop turn,
+// before the misplaced frame reaches the screen.
+// ─────────────────────────────────────────────────────────────────
+
+@MainActor
+final class PanelCenterer {
+
+    private weak var window: NSWindow?
+    private var moveObserver: NSObjectProtocol?
+
+    func attach(to window: NSWindow) {
+        if self.window === window {
+            center()
+            return
+        }
+        if let moveObserver {
+            NotificationCenter.default.removeObserver(moveObserver)
+        }
+        self.window = window
+        center()
+        moveObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.center() }
+        }
+    }
+
+    private func center() {
+        guard let panelWindow = window else { return }
+        // The status item lives in its own tiny window at menu bar
+        // height — the only other window this app owns up there.
+        guard let iconFrame = NSApp.windows.first(where: {
+            $0 !== panelWindow && $0.className.contains("StatusBarWindow")
+        })?.frame else { return }
+        guard let screen = panelWindow.screen ?? NSScreen.main else { return }
+
+        let margin: CGFloat = 8
+        var x = iconFrame.midX - panelWindow.frame.width / 2
+        x = max(screen.visibleFrame.minX + margin,
+                min(x, screen.visibleFrame.maxX - panelWindow.frame.width - margin))
+
+        // Already centered (or this move was our own correction) —
+        // returning here is what stops notification recursion.
+        guard abs(panelWindow.frame.origin.x - x) > 0.5 else { return }
+        panelWindow.setFrameOrigin(NSPoint(x: x, y: panelWindow.frame.origin.y))
+    }
+
+    deinit {
+        if let moveObserver {
+            NotificationCenter.default.removeObserver(moveObserver)
+        }
+    }
 }

@@ -24,6 +24,7 @@ struct StatsPanelView: View {
     /// controller finds the menu bar panel's window to sit beside.
     @State private var hostView: NSView?
     @State private var detailPanelController = DetailPanelController()
+    @State private var panelCenterer = PanelCenterer()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -36,7 +37,9 @@ struct StatsPanelView: View {
         }
         .padding(12)
         .frame(width: 300)
-        .background(HostingViewAccessor(view: $hostView))
+        .background(HostingViewAccessor(view: $hostView) { window in
+            panelCenterer.attach(to: window)
+        })
         .onChange(of: expandedSection) { section in
             if section == .memory {
                 detailPanelController.show(
@@ -49,36 +52,12 @@ struct StatsPanelView: View {
         }
         // Tell the store when the panel opens/closes so it can switch
         // between the fast (2s) and idle (15s) refresh intervals.
-        .onAppear {
-            statsStore.panelDidOpen()
-            // One runloop tick later the window exists and macOS has
-            // placed it — then nudge it under the icon.
-            DispatchQueue.main.async { centerPanelUnderStatusItem() }
-        }
+        .onAppear { statsStore.panelDidOpen() }
         .onDisappear {
             detailPanelController.hide()
             expandedSection = nil
             statsStore.panelDidClose()
         }
-    }
-
-    /// MenuBarExtra positions its window left-aligned to the status
-    /// item; move it so it's centered under the icon instead (clamped
-    /// to the screen edge).
-    private func centerPanelUnderStatusItem() {
-        guard let panelWindow = hostView?.window else { return }
-        // The status item lives in its own tiny window at menu bar
-        // height — the only other window this app owns up there.
-        guard let iconFrame = NSApp.windows.first(where: {
-            $0 !== panelWindow && $0.className.contains("StatusBarWindow")
-        })?.frame else { return }
-        guard let screen = panelWindow.screen ?? NSScreen.main else { return }
-
-        let margin: CGFloat = 8
-        var x = iconFrame.midX - panelWindow.frame.width / 2
-        x = max(screen.visibleFrame.minX + margin,
-                min(x, screen.visibleFrame.maxX - panelWindow.frame.width - margin))
-        panelWindow.setFrameOrigin(NSPoint(x: x, y: panelWindow.frame.origin.y))
     }
 
     private var memoryDetailContent: some View {
@@ -132,7 +111,8 @@ struct StatsPanelView: View {
 
     private var memorySection: some View {
         StatSectionCard(title: "Memory") {
-            HStack(spacing: 14) {
+            HStack {
+                Spacer()
                 SegmentedCircularGauge(
                     segments: [GaugeSegment(
                         color: pressureColor(statsStore.memoryUsage.pressurePercent),
@@ -140,24 +120,16 @@ struct StatsPanelView: View {
                     )],
                     label: "\(Int(statsStore.memoryUsage.pressurePercent))%",
                     caption: "PRESSURE",
-                    size: 56
+                    size: 72
                 )
+                Spacer()
                 SegmentedCircularGauge(
                     segments: memoryGaugeSegments(statsStore.memoryUsage),
                     label: "\(Int(statsStore.memoryUsage.usedPercent))%",
                     caption: "MEMORY",
-                    size: 56
+                    size: 72
                 )
-                VStack(alignment: .leading, spacing: 4) {
-                    LabeledValueRow(
-                        label: "Used",
-                        value: formatBytes(statsStore.memoryUsage.usedBytes)
-                    )
-                    LabeledValueRow(
-                        label: "Total",
-                        value: formatBytes(statsStore.memoryUsage.totalBytes)
-                    )
-                }
+                Spacer()
             }
         }
     }
