@@ -45,13 +45,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = MenuBarIcon.make()
+        statusItem.button?.toolTip = "Mac Usage"
         statusItem.button?.target = self
-        statusItem.button?.action = #selector(togglePanel)
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         hostingView = NSHostingView(
             rootView: AnyView(StatsPanelView().environmentObject(statsStore))
         )
         panel = FloatingPanel.make(wrapping: hostingView)
+    }
+
+    // MARK: Status item clicks
+
+    @objc private func statusItemClicked() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showContextMenu()
+        } else {
+            togglePanel()
+        }
+    }
+
+    private func showContextMenu() {
+        if panel.isVisible {
+            hidePanel()
+        }
+
+        let menu = NSMenu()
+        let openItem = NSMenuItem(title: "Open", action: #selector(openPanelFromMenu), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+        menu.addItem(.separator())
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitFromMenu), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        // Attach the menu only for this click: with a permanent menu,
+        // left clicks would open it too instead of toggling the panel.
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    @objc private func openPanelFromMenu() {
+        if !panel.isVisible {
+            showPanel()
+        }
+    }
+
+    @objc private func quitFromMenu() {
+        NSApp.terminate(nil)
     }
 
     @objc private func togglePanel() {
