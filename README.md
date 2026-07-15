@@ -16,24 +16,38 @@ No Xcode project, no dependencies — plain Swift Package Manager.
 ## Install (one command)
 
 ```bash
-git clone https://github.com/ShovonCodes/mac-usage.git
-cd mac-usage
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/ShovonCodes/mac-usage/main/bootstrap.sh | bash
 ```
 
-That builds the app, wraps it into a real `MacUsage.app` bundle, installs it
-into `/Applications`, and launches it. A gauge icon appears in the menu bar;
-click it to open the stats panel. Quit from the panel's Quit button.
+That fetches the latest code, builds the app, wraps it into a real
+`MacUsage.app` bundle, installs it into `/Applications`, and launches it.
+A gauge icon appears in the menu bar; click it to open the stats panel.
+Quit from the panel's Quit button.
+
+Want it to start automatically at every login? Use this instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ShovonCodes/mac-usage/main/bootstrap.sh | LOGIN=1 bash
+```
 
 After installing:
 
 - Spotlight finds it: ⌘Space → "Mac Usage".
 - It behaves like any other installed app — no terminal needed again.
-- To start it automatically at every login: `./install.sh --login`
-  (or answer `y` when the installer asks).
 
-Re-run `./install.sh` any time to update the installed copy — for example
-after pulling new code or editing the source.
+Prefer not to pipe curl into bash? Clone and run the installer yourself —
+it's the same thing:
+
+```bash
+git clone https://github.com/ShovonCodes/mac-usage.git
+cd mac-usage
+./install.sh          # or ./install.sh --login
+```
+
+## Update
+
+Run the install command again. It always fetches the latest code, rebuilds,
+and replaces the installed app in place — there is no separate updater.
 
 ## Developing
 
@@ -93,5 +107,12 @@ per-process top consumers.
 
 ## Uninstall
 
-Quit the app, then delete `/Applications/MacUsage.app`. If you enabled
-start-at-login, also remove it from System Settings → General → Login Items.
+```bash
+curl -fsSL https://raw.githubusercontent.com/ShovonCodes/mac-usage/main/uninstall.sh | bash
+```
+
+Quits the app, deletes it, removes the login item, and clears preferences.
+
+Manual alternative: quit the app, drag `/Applications/MacUsage.app` to the
+Trash, and (if you enabled start-at-login) remove it from
+System Settings → General → Login Items.
