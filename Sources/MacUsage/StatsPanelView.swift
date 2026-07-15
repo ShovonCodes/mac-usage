@@ -39,10 +39,10 @@ struct StatsPanelView: View {
                 batterySection
                     .onHover { hover(.battery, isInside: $0) }
             }
-            fansSection
-                .onHover { hover(.fans, isInside: $0) }
             temperaturesSection
                 .onHover { hover(.temperature, isInside: $0) }
+            fansSection
+                .onHover { hover(.fans, isInside: $0) }
             bottomBar
         }
         .padding(12)
@@ -420,6 +420,15 @@ struct BatteryDetailColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "Battery Details")
+            StatSectionCard(title: "Last 24 Hours") {
+                if statsStore.batteryHistory.allSatisfy({ $0.levelPercent == nil }) {
+                    Text("Collecting history…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    BatteryHistoryChart(points: statsStore.batteryHistory)
+                }
+            }
             StatSectionCard(title: "Charge") {
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledValueRow(
@@ -434,15 +443,6 @@ struct BatteryDetailColumn: View {
                         label: "Time on battery",
                         value: statsStore.timeOnBatteryMinutes.map(minutesText) ?? "—"
                     )
-                }
-            }
-            StatSectionCard(title: "Last 24 Hours") {
-                if statsStore.batteryHistory.allSatisfy({ $0.levelPercent == nil }) {
-                    Text("Collecting history…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    BatteryHistoryChart(points: statsStore.batteryHistory)
                 }
             }
             StatSectionCard(title: "Health") {
