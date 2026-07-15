@@ -16,9 +16,13 @@ set -euo pipefail
 
 REPO_URL="${MACUSAGE_REPO:-https://github.com/ShovonCodes/mac-usage.git}"
 
-if ! command -v git >/dev/null 2>&1 || ! command -v swift >/dev/null 2>&1; then
-  echo "error: the Xcode Command Line Tools are required (they include git and Swift)."
-  echo "Install them first:  xcode-select --install"
+# Note: `command -v git` can't detect missing tools — macOS ships
+# stub binaries that exist even before the CLT are installed.
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "MacUsage needs the Xcode Command Line Tools (free; includes git and Swift)."
+  echo "macOS will show an install dialog now — click Install, wait for it to"
+  echo "finish, then run this command again."
+  xcode-select --install >/dev/null 2>&1 || true
   exit 1
 fi
 

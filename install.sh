@@ -26,9 +26,13 @@ WANT_LOGIN_ITEM="ask"
 [ "${1:-}" = "--login" ] && WANT_LOGIN_ITEM="yes"
 
 # 1. Toolchain check ───────────────────────────────────────────────
-if ! command -v swift >/dev/null 2>&1; then
-  echo "error: Swift toolchain not found."
-  echo "Install the Xcode Command Line Tools first:  xcode-select --install"
+# `command -v swift` can't detect missing tools — macOS ships stub
+# binaries that exist even before the CLT are installed.
+if ! xcode-select -p >/dev/null 2>&1; then
+  echo "MacUsage needs the Xcode Command Line Tools (free; includes Swift)."
+  echo "macOS will show an install dialog now — click Install, wait for it to"
+  echo "finish, then run this script again."
+  xcode-select --install >/dev/null 2>&1 || true
   exit 1
 fi
 
