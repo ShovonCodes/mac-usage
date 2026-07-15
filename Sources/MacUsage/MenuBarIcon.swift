@@ -16,13 +16,13 @@ import AppKit
 
 enum MenuBarIcon {
 
-    /// Build the template image for the status item. 18×18 points is
-    /// the standard size for menu bar icons; drawing happens at the
-    /// screen's actual scale, so it is crisp on Retina displays.
-    static func make() -> NSImage {
-        let pointSize = NSSize(width: 18, height: 18)
-        let image = NSImage(size: pointSize, flipped: false) { _ in
-            drawGlyph()
+    /// Build the template image for the status item. Most menu bar
+    /// icons are 18 pt; 20 pt reads a touch larger while still fitting
+    /// the 24 pt menu bar. Drawing happens at the screen's actual
+    /// scale, so it is crisp on Retina displays.
+    static func make(size: CGFloat = 20) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+            drawGlyph(size: size)
             return true
         }
         image.isTemplate = true
@@ -30,10 +30,12 @@ enum MenuBarIcon {
         return image
     }
 
-    private static func drawGlyph() {
-        let center = NSPoint(x: 9, y: 9)
-        let arcRadius: CGFloat = 6.5
-        let arcStrokeWidth: CGFloat = 1.6
+    private static func drawGlyph(size: CGFloat) {
+        // All geometry is proportional to `size` (fractions of the
+        // original 18 pt design), so the glyph scales as one piece.
+        let center = NSPoint(x: size / 2, y: size / 2)
+        let arcRadius: CGFloat = size * 0.36
+        let arcStrokeWidth: CGFloat = size * 0.09
 
         // Speedometer sweep: bottom-left, over the top, to bottom-right
         // (270° total, with the gap at the bottom).
@@ -68,20 +70,20 @@ enum MenuBarIcon {
 
         // 3. Needle pointing at the value arc's end.
         let needleAngleRadians = valueEndAngle * .pi / 180
-        let needleLength: CGFloat = 5.2
+        let needleLength: CGFloat = size * 0.29
         let needle = NSBezierPath()
         needle.move(to: center)
         needle.line(to: NSPoint(
             x: center.x + needleLength * cos(needleAngleRadians),
             y: center.y + needleLength * sin(needleAngleRadians)
         ))
-        needle.lineWidth = 1.5
+        needle.lineWidth = size * 0.083
         needle.lineCapStyle = .round
         NSColor.black.setStroke()
         needle.stroke()
 
         // 4. Hub dot over the needle's base.
-        let hubRadius: CGFloat = 1.7
+        let hubRadius: CGFloat = size * 0.094
         let hub = NSBezierPath(ovalIn: NSRect(
             x: center.x - hubRadius, y: center.y - hubRadius,
             width: hubRadius * 2, height: hubRadius * 2
