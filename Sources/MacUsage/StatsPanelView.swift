@@ -16,110 +16,71 @@ enum ExpandableSection {
     case temperature
 }
 
-/// Collects each hoverable card's frame (in the main panel's
-/// coordinate space) so the detail panel can vertically align with
-/// the card being hovered.
-private struct SectionFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [ExpandableSection: CGRect] = [:]
-    static func reduce(value: inout [ExpandableSection: CGRect],
-                       nextValue: () -> [ExpandableSection: CGRect]) {
-        value.merge(nextValue()) { $1 }
-    }
-}
-
-/// Makes a stat card hover-expandable: reports hover changes and its
-/// own frame within the panel.
-private struct ExpandableCard: ViewModifier {
-    let section: ExpandableSection
-    let onHoverChange: (ExpandableSection, Bool) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { onHoverChange(section, $0) }
-            .background(GeometryReader { proxy in
-                Color.clear.preference(
-                    key: SectionFramePreferenceKey.self,
-                    value: [section: proxy.frame(in: .named("statsPanel"))]
-                )
-            })
-    }
-}
 
 struct StatsPanelView: View {
     @EnvironmentObject var statsStore: StatsStore
 
     /// Which card's detail panel is currently expanded, if any.
     @State private var expandedSection: ExpandableSection?
-    /// Pending "collapse the detail panel" action; cancelled whenever
-    /// the pointer re-enters the card or the detail panel itself.
-    @State private var collapseWorkItem: DispatchWorkItem?
     /// The NSView hosting this SwiftUI view — how the detail panel
     /// controller finds the menu bar panel's window to sit beside.
     @State private var hostView: NSView?
     @State private var detailPanelController = DetailPanelController()
-    /// Each hoverable card's frame within the panel, for aligning the
-    /// detail panel with the hovered card.
-    @State private var sectionFrames: [ExpandableSection: CGRect] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             cpuSection
-                .modifier(ExpandableCard(section: .cpu, onHoverChange: hover))
+                .onHover { if $0 { expandedSection = .cpu } }
             memorySection
-                .modifier(ExpandableCard(section: .memory, onHoverChange: hover))
+                .onHover { if $0 { expandedSection = .memory } }
             if statsStore.battery.isPresent {
                 batterySection
-                    .modifier(ExpandableCard(section: .battery, onHoverChange: hover))
+                    .onHover { if $0 { expandedSection = .battery } }
             }
             temperaturesSection
-                .modifier(ExpandableCard(section: .temperature, onHoverChange: hover))
+                .onHover { if $0 { expandedSection = .temperature } }
             fansSection
-                .modifier(ExpandableCard(section: .fans, onHoverChange: hover))
+                .onHover { if $0 { expandedSection = .fans } }
             bottomBar
         }
         .padding(12)
         .frame(width: 300)
-        .coordinateSpace(name: "statsPanel")
-        .onPreferenceChange(SectionFramePreferenceKey.self) { sectionFrames = $0 }
         .background(HostingViewAccessor(view: $hostView))
         .onChange(of: expandedSection) { section in
             guard let section else {
                 detailPanelController.hide()
                 return
             }
+            // The detail closes only when the pointer leaves both the
+            // main panel and the detail panel — the controller watches
+            // for that, so leaving an individual card never dismisses it.
+            detailPanelController.onPointerLeftPanels = { expandedSection = nil }
             showDetail(for: section)
         }
         // The hosting view stays alive between panel opens, so
         // onDisappear never fires — the delegate tells us instead.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
-            collapseWorkItem?.cancel()
             expandedSection = nil
         }
     }
 
     private func showDetail(for section: ExpandableSection) {
-        let cardFrame = sectionFrames[section]
         switch section {
         case .cpu:
             detailPanelController.show(content: cpuDetailContent,
-                                       besideWindowContaining: hostView,
-                                       alignedTo: cardFrame)
+                                       besideWindowContaining: hostView)
         case .memory:
             detailPanelController.show(content: memoryDetailContent,
-                                       besideWindowContaining: hostView,
-                                       alignedTo: cardFrame)
+                                       besideWindowContaining: hostView)
         case .battery:
             detailPanelController.show(content: batteryDetailContent,
-                                       besideWindowContaining: hostView,
-                                       alignedTo: cardFrame)
+                                       besideWindowContaining: hostView)
         case .fans:
             detailPanelController.show(content: fanDetailContent,
-                                       besideWindowContaining: hostView,
-                                       alignedTo: cardFrame)
+                                       besideWindowContaining: hostView)
         case .temperature:
             detailPanelController.show(content: temperatureDetailContent,
-                                       besideWindowContaining: hostView,
-                                       alignedTo: cardFrame)
+                                       besideWindowContaining: hostView)
         }
     }
 
@@ -128,7 +89,6 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
-            .onHover { hover(.memory, isInside: $0) }
     }
 
     private var cpuDetailContent: some View {
@@ -136,7 +96,6 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
-            .onHover { hover(.cpu, isInside: $0) }
     }
 
     private var batteryDetailContent: some View {
@@ -144,7 +103,6 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
-            .onHover { hover(.battery, isInside: $0) }
     }
 
     private var fanDetailContent: some View {
@@ -152,7 +110,6 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
-            .onHover { hover(.fans, isInside: $0) }
     }
 
     private var temperatureDetailContent: some View {
@@ -161,23 +118,6 @@ struct StatsPanelView: View {
             .frame(width: 240)
             .padding(12)
             .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
-            .onHover { hover(.temperature, isInside: $0) }
-    }
-
-    // MARK: Hover expansion
-
-    /// Expands `section` while the pointer is over its card or its
-    /// detail panel. Collapsing is slightly delayed so the pointer
-    /// can cross the gap between the two without the panel vanishing.
-    private func hover(_ section: ExpandableSection, isInside: Bool) {
-        collapseWorkItem?.cancel()
-        if isInside {
-            expandedSection = section
-        } else {
-            let workItem = DispatchWorkItem { expandedSection = nil }
-            collapseWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
-        }
     }
 
     // MARK: CPU

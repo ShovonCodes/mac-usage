@@ -15,6 +15,13 @@ import SwiftUI
 final class DetailPanelController {
 
     private var panel: NSPanel?
+    private weak var anchorWindow: NSWindow?
+    private var pointerWatchTimer: Timer?
+    private var ticksOutsideBothPanels = 0
+
+    /// Called when the pointer has left both the main panel and the
+    /// detail panel — the view collapses the detail in response.
+    var onPointerLeftPanels: (() -> Void)?
 
     /// Horizontal gap between the main panel and the detail panel.
     private let gapBetweenPanels: CGFloat = 8
@@ -22,16 +29,9 @@ final class DetailPanelController {
     /// Shows `content` in a floating panel beside the window that
     /// contains `anchorView` (the main menu bar panel). Prefers the
     /// left side; falls back to the right when the left lacks room.
-    ///
-    /// `cardFrame` is the hovered card's frame in the main panel's
-    /// coordinate space (origin at the panel's top-left): the detail
-    /// top-aligns with that card, so the pointer only has to cross the
-    /// small horizontal gap — never a long diagonal it would fall off.
-    func show<Content: View>(
-        content: Content,
-        besideWindowContaining anchorView: NSView?,
-        alignedTo cardFrame: CGRect? = nil
-    ) {
+    /// Always top-aligned with the main panel, so every card's detail
+    /// opens in the same place.
+    func show<Content: View>(content: Content, besideWindowContaining anchorView: NSView?) {
         hide()
         guard let anchorWindow = anchorView?.window else { return }
         guard let screen = anchorWindow.screen ?? NSScreen.main else { return }
@@ -50,12 +50,8 @@ final class DetailPanelController {
         } else {
             x = anchorFrame.maxX + gapBetweenPanels
         }
-
-        // Top-align with the hovered card (or the whole panel when no
-        // card frame is known), clamped to stay fully on screen.
-        let top = min(cardFrame.map { anchorFrame.maxY - $0.minY } ?? anchorFrame.maxY,
-                      visibleFrame.maxY)
-        let y = max(top - size.height, visibleFrame.minY + 8)
+        // Top-align with the main panel, but never above the visible area.
+        let y = min(anchorFrame.maxY, visibleFrame.maxY) - size.height
 
         let newPanel = FloatingPanel.make(wrapping: hostingView)
         newPanel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height),
@@ -68,11 +64,45 @@ final class DetailPanelController {
         }
 
         panel = newPanel
+        self.anchorWindow = anchorWindow
+        startWatchingPointer()
     }
 
     func hide() {
+        pointerWatchTimer?.invalidate()
+        pointerWatchTimer = nil
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    // MARK: Pointer watching
+
+    /// The detail stays open while the pointer is anywhere inside the
+    /// main panel or the detail panel (plus a small corridor between
+    /// them) — hover-exit events on individual cards can't dismiss it
+    /// mid-travel. Two consecutive misses (~0.3s) close it.
+    private func startWatchingPointer() {
+        ticksOutsideBothPanels = 0
+        pointerWatchTimer?.invalidate()
+        pointerWatchTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkPointer() }
+        }
+    }
+
+    private func checkPointer() {
+        guard let panel, let anchorWindow else { return }
+        let pointer = NSEvent.mouseLocation
+        let nearPanels = anchorWindow.frame.insetBy(dx: -8, dy: -8).contains(pointer)
+            || panel.frame.insetBy(dx: -8, dy: -8).contains(pointer)
+
+        if nearPanels {
+            ticksOutsideBothPanels = 0
+        } else {
+            ticksOutsideBothPanels += 1
+            if ticksOutsideBothPanels >= 2 {
+                onPointerLeftPanels?()
+            }
+        }
     }
 
     /// Resizes the visible panel when its SwiftUI content changes size
