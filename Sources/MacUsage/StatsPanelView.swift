@@ -110,8 +110,19 @@ struct StatsPanelView: View {
         StatSectionCard(title: "Memory") {
             HStack(spacing: 14) {
                 SegmentedCircularGauge(
+                    segments: [GaugeSegment(
+                        color: pressureColor(statsStore.memoryUsage.pressurePercent),
+                        fraction: statsStore.memoryUsage.pressurePercent / 100
+                    )],
+                    label: "\(Int(statsStore.memoryUsage.pressurePercent))%",
+                    caption: "PRESSURE",
+                    size: 56
+                )
+                SegmentedCircularGauge(
                     segments: memoryGaugeSegments(statsStore.memoryUsage),
-                    label: "\(Int(statsStore.memoryUsage.usedPercent))%"
+                    label: "\(Int(statsStore.memoryUsage.usedPercent))%",
+                    caption: "MEMORY",
+                    size: 56
                 )
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledValueRow(
