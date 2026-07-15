@@ -79,8 +79,6 @@ installed app keeps running.
 | File | Job |
 |---|---|
 | `MacUsageApp.swift` | Entry point; puts the app in the menu bar |
-| `MenuBarIcon.swift` | Draws the menu bar glyph in code (template image) |
-| `Assets/` | App icon (icns for the bundle, plus svg/png sources) |
 | `StatsPanelView.swift` | The dropdown panel UI |
 | `StatsStore.swift` | Owns readers + the adaptive refresh timer |
 | `Readers/CpuUsageReader.swift` | CPU % from kernel tick counters |
