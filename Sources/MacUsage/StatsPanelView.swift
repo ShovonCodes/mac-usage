@@ -286,7 +286,7 @@ struct MemoryDetailColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            gaugesCard
+            DetailColumnHeader(title: "Memory Details")
             StatSectionCard(title: "Breakdown") {
                 VStack(alignment: .leading, spacing: 4) {
                     BreakdownRow(color: .blue, label: "App",
@@ -319,34 +319,17 @@ struct MemoryDetailColumn: View {
         }
     }
 
-    /// The two big rings on top: pressure (one color) and usage
-    /// (segmented like the main card's gauge).
-    private var gaugesCard: some View {
-        HStack {
-            Spacer()
-            SegmentedCircularGauge(
-                segments: [GaugeSegment(
-                    color: pressureColor(statsStore.memoryUsage.pressurePercent),
-                    fraction: statsStore.memoryUsage.pressurePercent / 100
-                )],
-                label: "\(Int(statsStore.memoryUsage.pressurePercent))%",
-                caption: "PRESSURE",
-                size: 64
-            )
-            Spacer()
-            SegmentedCircularGauge(
-                segments: memoryGaugeSegments(statsStore.memoryUsage),
-                label: "\(Int(statsStore.memoryUsage.usedPercent))%",
-                caption: "MEMORY",
-                size: 64
-            )
-            Spacer()
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.gray.opacity(0.12))
-        )
+}
+
+/// The small uppercase title at the top of every hover detail column.
+struct DetailColumnHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.leading, 2)
     }
 }
 
@@ -359,6 +342,7 @@ struct FanDetailColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "Fan Details")
             if statsStore.fanDetails.isEmpty {
                 StatSectionCard(title: "Fans") {
                     Text("No fans detected (fanless Mac, or sensors unavailable)")
@@ -419,6 +403,7 @@ struct TemperatureDetailColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "Temperature Details")
             StatSectionCard(title: "Sensors") {
                 if statsStore.temperatures.isEmpty {
                     Text("No temperature sensors available")
@@ -460,6 +445,7 @@ struct CpuDetailColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "CPU Details")
             StatSectionCard(title: "Breakdown") {
                 VStack(alignment: .leading, spacing: 4) {
                     BreakdownRow(color: cpuUserColor, label: "User",
