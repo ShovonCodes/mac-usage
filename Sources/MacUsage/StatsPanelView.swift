@@ -145,10 +145,7 @@ struct StatsPanelView: View {
             Text(label)
                 .font(.callout)
             Spacer()
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+            SettingSwitch(isOn: isOn)
         }
     }
 
@@ -584,6 +581,31 @@ struct MemoryDetailColumn: View {
         }
     }
 
+}
+
+/// Hand-drawn switch: the system one renders gray in this panel
+/// (a non-activating window never looks "active" to AppKit), which
+/// made on and off nearly indistinguishable. This one keeps a
+/// colored track no matter the window state.
+struct SettingSwitch: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { isOn.toggle() }
+        } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? Color.accentColor : Color.gray.opacity(0.4))
+                Circle()
+                    .fill(.white)
+                    .padding(2)
+                    .shadow(color: .black.opacity(0.25), radius: 0.8, y: 0.5)
+            }
+            .frame(width: 34, height: 20)
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 /// The small uppercase title at the top of every hover detail column.
