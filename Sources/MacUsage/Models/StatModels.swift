@@ -56,6 +56,16 @@ struct FanReading: Identifiable {
     var speedRpm: Double = 0 // current rotations per minute
 }
 
+/// Everything the SMC knows about one fan (for the hover panel).
+/// Values the SMC doesn't expose stay 0 and render as "—".
+struct FanDetailReading: Identifiable {
+    let id: Int              // fan index: 0, 1, ...
+    var currentRpm: Double = 0
+    var minRpm: Double = 0
+    var maxRpm: Double = 0
+    var targetRpm: Double = 0
+}
+
 /// One temperature sensor grouped into a friendly category.
 struct TemperatureReading: Identifiable {
     let id: String           // the raw 4-character SMC key, e.g. "Tp01"

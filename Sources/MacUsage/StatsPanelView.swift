@@ -11,6 +11,8 @@ import AppKit
 enum ExpandableSection {
     case cpu
     case memory
+    case fans
+    case temperature
 }
 
 struct StatsPanelView: View {
@@ -33,7 +35,9 @@ struct StatsPanelView: View {
             memorySection
                 .onHover { hover(.memory, isInside: $0) }
             fansSection
+                .onHover { hover(.fans, isInside: $0) }
             temperaturesSection
+                .onHover { hover(.temperature, isInside: $0) }
             bottomBar
         }
         .padding(12)
@@ -49,6 +53,16 @@ struct StatsPanelView: View {
             case .memory:
                 detailPanelController.show(
                     content: memoryDetailContent,
+                    besideWindowContaining: hostView
+                )
+            case .fans:
+                detailPanelController.show(
+                    content: fanDetailContent,
+                    besideWindowContaining: hostView
+                )
+            case .temperature:
+                detailPanelController.show(
+                    content: temperatureDetailContent,
                     besideWindowContaining: hostView
                 )
             case nil:
@@ -77,6 +91,22 @@ struct StatsPanelView: View {
             .frame(width: 240)
             .padding(12)
             .onHover { hover(.cpu, isInside: $0) }
+    }
+
+    private var fanDetailContent: some View {
+        FanDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .onHover { hover(.fans, isInside: $0) }
+    }
+
+    private var temperatureDetailContent: some View {
+        TemperatureDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .onHover { hover(.temperature, isInside: $0) }
     }
 
     // MARK: Hover expansion
@@ -317,6 +347,107 @@ struct MemoryDetailColumn: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.gray.opacity(0.12))
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Fans hover detail: one card per fan with a speed ring + min/max
+// ─────────────────────────────────────────────────────────────────
+
+struct FanDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if statsStore.fanDetails.isEmpty {
+                StatSectionCard(title: "Fans") {
+                    Text("No fans detected (fanless Mac, or sensors unavailable)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(statsStore.fanDetails) { fan in
+                    StatSectionCard(
+                        title: statsStore.fanDetails.count == 1 ? "Fan" : "Fan \(fan.id + 1)"
+                    ) {
+                        HStack(spacing: 14) {
+                            SegmentedCircularGauge(
+                                segments: [GaugeSegment(
+                                    color: fanColor(fan),
+                                    fraction: fanSpeedFraction(fan)
+                                )],
+                                label: fan.currentRpm < 1 ? "Off" : "\(Int(fan.currentRpm))",
+                                caption: "RPM",
+                                size: 64
+                            )
+                            VStack(alignment: .leading, spacing: 4) {
+                                LabeledValueRow(label: "Min", value: rpmText(fan.minRpm))
+                                LabeledValueRow(label: "Target", value: rpmText(fan.targetRpm))
+                                LabeledValueRow(label: "Max", value: rpmText(fan.maxRpm))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private func rpmText(_ rpm: Double) -> String {
+    rpm < 1 ? "—" : "\(Int(rpm)) RPM"
+}
+
+/// Current speed as a share of the fan's maximum (0 when unknown).
+private func fanSpeedFraction(_ fan: FanDetailReading) -> Double {
+    guard fan.maxRpm > 0 else { return 0 }
+    return min(fan.currentRpm / fan.maxRpm, 1)
+}
+
+private func fanColor(_ fan: FanDetailReading) -> Color {
+    let fraction = fanSpeedFraction(fan)
+    if fraction < 0.6 { return .green }
+    if fraction < 0.85 { return .orange }
+    return .red
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Temperature hover detail: every sensor, grouped by category
+// ─────────────────────────────────────────────────────────────────
+
+struct TemperatureDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            StatSectionCard(title: "Sensors") {
+                if statsStore.temperatures.isEmpty {
+                    Text("No temperature sensors available")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        let displayOrder: [TemperatureCategory] = [.cpu, .gpu, .battery, .other]
+                        ForEach(displayOrder, id: \.self) { category in
+                            let readings = statsStore.temperatures
+                                .filter { $0.category == category }
+                                .sorted { $0.celsius > $1.celsius }
+                            if !readings.isEmpty {
+                                Text(category.rawValue.uppercased())
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 2)
+                                ForEach(Array(readings.enumerated()), id: \.element.id) { index, reading in
+                                    LabeledValueRow(
+                                        label: "\(category.rawValue) \(index + 1)",
+                                        value: String(format: "%.0f°", reading.celsius)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

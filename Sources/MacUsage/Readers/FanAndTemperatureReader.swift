@@ -40,6 +40,30 @@ final class FanAndTemperatureReader {
         return fans
     }
 
+    /// Full per-fan detail for the hover panel. "Ac" is the actual
+    /// speed; "Mn"/"Mx"/"Tg" are the SMC's min/max/target speeds.
+    func readFanDetails() -> [FanDetailReading] {
+        smc.open()
+        guard smc.isOpen else { return [] }
+
+        guard let fanCount = smc.readNumericValue(forKey: "FNum"), fanCount > 0 else {
+            return []
+        }
+
+        var details: [FanDetailReading] = []
+        for fanIndex in 0..<Int(fanCount) {
+            guard let currentRpm = smc.readNumericValue(forKey: "F\(fanIndex)Ac") else { continue }
+            details.append(FanDetailReading(
+                id: fanIndex,
+                currentRpm: currentRpm,
+                minRpm: smc.readNumericValue(forKey: "F\(fanIndex)Mn") ?? 0,
+                maxRpm: smc.readNumericValue(forKey: "F\(fanIndex)Mx") ?? 0,
+                targetRpm: smc.readNumericValue(forKey: "F\(fanIndex)Tg") ?? 0
+            ))
+        }
+        return details
+    }
+
     // MARK: Temperatures
 
     func readTemperatures() -> [TemperatureReading] {
@@ -67,7 +91,12 @@ final class FanAndTemperatureReader {
     /// e.g. Apple Silicon Macs expose 10+ CPU sensors; showing the average
     /// of them matches what most monitoring apps display.
     func readAverageTemperaturesByCategory() -> [TemperatureCategory: Double] {
-        let readings = readTemperatures()
+        return Self.averageTemperatures(from: readTemperatures())
+    }
+
+    /// Static so the store can average readings it already fetched
+    /// without hitting the SMC a second time.
+    static func averageTemperatures(from readings: [TemperatureReading]) -> [TemperatureCategory: Double] {
         var sumByCategory: [TemperatureCategory: Double] = [:]
         var countByCategory: [TemperatureCategory: Int] = [:]
 

@@ -29,7 +29,9 @@ final class StatsStore: ObservableObject {
     @Published var memoryUsage = MemoryUsageSnapshot()
     @Published var memoryDetails = MemoryDetails()
     @Published var fans: [FanReading] = []
+    @Published var fanDetails: [FanDetailReading] = []
     @Published var averageTemperatures: [TemperatureCategory: Double] = [:]
+    @Published var temperatures: [TemperatureReading] = []
 
     // The readers that actually collect the data.
     private let cpuReader = CpuUsageReader()
@@ -89,11 +91,14 @@ final class StatsStore: ObservableObject {
         // so the UI never stutters, then publish results back on main.
         let sensorReader = self.sensorReader
         Task.detached(priority: .utility) {
-            let fans = sensorReader.readFans()
-            let temperatures = sensorReader.readAverageTemperaturesByCategory()
+            let fanDetails = sensorReader.readFanDetails()
+            let temperatureReadings = sensorReader.readTemperatures()
+            let averages = FanAndTemperatureReader.averageTemperatures(from: temperatureReadings)
             await MainActor.run { [weak self] in
-                self?.fans = fans
-                self?.averageTemperatures = temperatures
+                self?.fanDetails = fanDetails
+                self?.fans = fanDetails.map { FanReading(id: $0.id, speedRpm: $0.currentRpm) }
+                self?.temperatures = temperatureReadings
+                self?.averageTemperatures = averages
             }
         }
 
