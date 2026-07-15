@@ -109,8 +109,8 @@ struct StatsPanelView: View {
     private var memorySection: some View {
         StatSectionCard(title: "Memory") {
             HStack(spacing: 14) {
-                CircularGauge(
-                    percent: statsStore.memoryUsage.usedPercent,
+                SegmentedCircularGauge(
+                    segments: memoryGaugeSegments(statsStore.memoryUsage),
                     label: "\(Int(statsStore.memoryUsage.usedPercent))%"
                 )
                 VStack(alignment: .leading, spacing: 4) {
@@ -203,6 +203,26 @@ private func formatBytes(_ bytes: UInt64) -> String {
     return formatter.string(fromByteCount: Int64(bytes))
 }
 
+/// The colored arcs for the memory ring: App / Wired / Compressed,
+/// each as its share of total RAM. Free stays the gray base track.
+private func memoryGaugeSegments(_ memory: MemoryUsageSnapshot) -> [GaugeSegment] {
+    let totalBytes = Double(memory.totalBytes)
+    guard totalBytes > 0 else { return [] }
+    return [
+        GaugeSegment(color: .blue, fraction: Double(memory.breakdown.appBytes) / totalBytes),
+        GaugeSegment(color: .pink, fraction: Double(memory.breakdown.wiredBytes) / totalBytes),
+        GaugeSegment(color: .yellow, fraction: Double(memory.breakdown.compressedBytes) / totalBytes),
+    ]
+}
+
+/// Green when relaxed, orange when strained, red when critical —
+/// same thresholds the plain gauges use.
+private func pressureColor(_ percent: Double) -> Color {
+    if percent < 50 { return .green }
+    if percent < 80 { return .orange }
+    return .red
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Memory hover detail: breakdown + top processes
 // ─────────────────────────────────────────────────────────────────
@@ -212,16 +232,17 @@ struct MemoryDetailColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            gaugesCard
             StatSectionCard(title: "Breakdown") {
                 VStack(alignment: .leading, spacing: 4) {
                     BreakdownRow(color: .blue, label: "App",
-                                 bytes: statsStore.memoryDetails.breakdown.appBytes)
+                                 bytes: statsStore.memoryUsage.breakdown.appBytes)
                     BreakdownRow(color: .pink, label: "Wired",
-                                 bytes: statsStore.memoryDetails.breakdown.wiredBytes)
+                                 bytes: statsStore.memoryUsage.breakdown.wiredBytes)
                     BreakdownRow(color: .yellow, label: "Compressed",
-                                 bytes: statsStore.memoryDetails.breakdown.compressedBytes)
+                                 bytes: statsStore.memoryUsage.breakdown.compressedBytes)
                     BreakdownRow(color: .gray, label: "Free",
-                                 bytes: statsStore.memoryDetails.breakdown.freeBytes)
+                                 bytes: statsStore.memoryUsage.breakdown.freeBytes)
                 }
             }
             StatSectionCard(title: "Processes") {
@@ -238,6 +259,36 @@ struct MemoryDetailColumn: View {
                 }
             }
         }
+    }
+
+    /// The two big rings on top: pressure (one color) and usage
+    /// (segmented like the main card's gauge).
+    private var gaugesCard: some View {
+        HStack {
+            Spacer()
+            SegmentedCircularGauge(
+                segments: [GaugeSegment(
+                    color: pressureColor(statsStore.memoryUsage.pressurePercent),
+                    fraction: statsStore.memoryUsage.pressurePercent / 100
+                )],
+                label: "\(Int(statsStore.memoryUsage.pressurePercent))%",
+                caption: "PRESSURE",
+                size: 64
+            )
+            Spacer()
+            SegmentedCircularGauge(
+                segments: memoryGaugeSegments(statsStore.memoryUsage),
+                label: "\(Int(statsStore.memoryUsage.usedPercent))%",
+                caption: "MEMORY",
+                size: 64
+            )
+            Spacer()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.gray.opacity(0.12))
+        )
     }
 }
 
@@ -330,6 +381,60 @@ struct LabeledValueRow: View {
             Text(value)
                 .font(.callout.monospacedDigit())
         }
+    }
+}
+
+/// One colored arc of a SegmentedCircularGauge.
+struct GaugeSegment {
+    let color: Color
+    let fraction: Double // 0...1 share of the full circle
+}
+
+/// A ring gauge whose fill is split into colored arcs (the iStat-style
+/// memory ring). The unfilled remainder stays a neutral gray track.
+/// One segment = a plain single-color gauge (used for pressure).
+struct SegmentedCircularGauge: View {
+    let segments: [GaugeSegment]
+    let label: String
+    var caption: String? = nil
+    var size: CGFloat = 52
+
+    private var lineWidth: CGFloat { max(5, size / 10) }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color(nsColor: .separatorColor), lineWidth: lineWidth)
+            ForEach(arcs.indices, id: \.self) { index in
+                let arc = arcs[index]
+                Circle()
+                    .trim(from: arc.start, to: arc.end)
+                    .stroke(arc.color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+                    .rotationEffect(.degrees(-90)) // start filling from 12 o'clock
+            }
+            VStack(spacing: 0) {
+                Text(label)
+                    .font(.system(size: size * 0.25, weight: .semibold).monospacedDigit())
+                if let caption {
+                    Text(caption)
+                        .font(.system(size: size * 0.12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    /// Segments laid end to end around the ring, clamped to one lap.
+    private var arcs: [(start: Double, end: Double, color: Color)] {
+        var result: [(Double, Double, Color)] = []
+        var cursor = 0.0
+        for segment in segments {
+            let end = min(cursor + max(segment.fraction, 0), 1)
+            result.append((cursor, end, segment.color))
+            cursor = end
+        }
+        return result
     }
 }
 

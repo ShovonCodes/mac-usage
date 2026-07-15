@@ -1,56 +1,20 @@
 import Foundation
 
 // ─────────────────────────────────────────────────────────────────
-// Collects the detailed memory view shown when hovering the Memory
-// card: an Activity-Monitor-style breakdown plus the processes that
-// use the most RAM.
+// Collects the process list shown when hovering the Memory card.
+// (The App/Wired/Compressed/Free breakdown lives in the regular
+// MemoryUsageReader — same kernel call as the used/total numbers.)
 //
-// The breakdown comes from the same kernel VM statistics the basic
-// reader uses. The process list comes from `ps axm` (every process,
-// pre-sorted by memory, no root needed) — the kernel exposes each
-// process's resident size to everyone, which is how we can report
-// system processes like WindowServer too.
+// The list comes from `ps axm` (every process, pre-sorted by memory,
+// no root needed) — the kernel exposes each process's resident size
+// to everyone, which is how we can report system processes like
+// WindowServer too.
 // ─────────────────────────────────────────────────────────────────
 
 final class MemoryDetailsReader {
 
     func readCurrentDetails() -> MemoryDetails {
-        MemoryDetails(
-            breakdown: readBreakdown(),
-            topProcesses: readTopProcesses(limit: 5)
-        )
-    }
-
-    // MARK: Breakdown (App / Wired / Compressed / Free)
-
-    private func readBreakdown() -> MemoryBreakdown {
-        var statistics = vm_statistics64()
-        var count = mach_msg_type_number_t(
-            MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride
-        )
-
-        let result = withUnsafeMutablePointer(to: &statistics) { statisticsPointer in
-            statisticsPointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, rebound, &count)
-            }
-        }
-
-        guard result == KERN_SUCCESS else { return MemoryBreakdown() }
-
-        let pageSizeBytes = UInt64(vm_kernel_page_size)
-
-        // "App" mirrors Activity Monitor: anonymous (internal) pages
-        // minus the purgeable ones the system could reclaim instantly.
-        let internalPages = UInt64(statistics.internal_page_count)
-        let purgeablePages = UInt64(statistics.purgeable_count)
-        let appPages = internalPages > purgeablePages ? internalPages - purgeablePages : 0
-
-        return MemoryBreakdown(
-            appBytes: appPages * pageSizeBytes,
-            wiredBytes: UInt64(statistics.wire_count) * pageSizeBytes,
-            compressedBytes: UInt64(statistics.compressor_page_count) * pageSizeBytes,
-            freeBytes: UInt64(statistics.free_count) * pageSizeBytes
-        )
+        MemoryDetails(topProcesses: readTopProcesses(limit: 5))
     }
 
     // MARK: Top processes

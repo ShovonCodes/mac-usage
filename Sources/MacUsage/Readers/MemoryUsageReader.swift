@@ -41,9 +41,36 @@ final class MemoryUsageReader {
 
         let usedBytes = (activePages + wiredPages + compressedPages) * pageSizeBytes
 
+        // "App" mirrors Activity Monitor: anonymous (internal) pages
+        // minus the purgeable ones the system could reclaim instantly.
+        let internalPages = UInt64(statistics.internal_page_count)
+        let purgeablePages = UInt64(statistics.purgeable_count)
+        let appPages = internalPages > purgeablePages ? internalPages - purgeablePages : 0
+
+        let breakdown = MemoryBreakdown(
+            appBytes: appPages * pageSizeBytes,
+            wiredBytes: wiredPages * pageSizeBytes,
+            compressedBytes: compressedPages * pageSizeBytes,
+            freeBytes: UInt64(statistics.free_count) * pageSizeBytes
+        )
+
         return MemoryUsageSnapshot(
             usedBytes: usedBytes,
-            totalBytes: totalPhysicalMemoryBytes
+            totalBytes: totalPhysicalMemoryBytes,
+            breakdown: breakdown,
+            pressurePercent: readPressurePercent()
         )
+    }
+
+    /// Memory pressure as 0–100. The kernel publishes an "available
+    /// memory" level (kern.memorystatus_level, 0–100, the same number
+    /// `memory_pressure` prints); pressure is its inverse.
+    private func readPressurePercent() -> Double {
+        var level: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.memorystatus_level", &level, &size, nil, 0) == 0,
+              (0...100).contains(level)
+        else { return 0 }
+        return Double(100 - level)
     }
 }

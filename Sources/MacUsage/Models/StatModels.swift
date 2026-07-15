@@ -20,6 +20,11 @@ struct CpuUsageSnapshot {
 struct MemoryUsageSnapshot {
     var usedBytes: UInt64 = 0
     var totalBytes: UInt64 = 0
+    /// Where the used memory goes (drives the segmented gauge colors).
+    var breakdown = MemoryBreakdown()
+    /// 0–100; how starved the system is for memory (100 - the kernel's
+    /// "available memory" level). Low is healthy.
+    var pressurePercent: Double = 0
 
     var usedPercent: Double {
         guard totalBytes > 0 else { return 0 }
@@ -64,8 +69,8 @@ struct ProcessMemoryUsage: Identifiable {
     let memoryBytes: UInt64
 }
 
-/// Everything the expanded Memory hover panel displays.
+/// Everything the expanded Memory hover panel displays that isn't
+/// already part of the regular memory snapshot.
 struct MemoryDetails {
-    var breakdown = MemoryBreakdown()
     var topProcesses: [ProcessMemoryUsage] = []
 }
