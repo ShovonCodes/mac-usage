@@ -61,6 +61,35 @@ final class DetailPanelController {
         panel?.orderOut(nil)
         panel = nil
     }
+
+    /// Resizes the visible panel when its SwiftUI content changes size
+    /// (e.g. the temperature grid/list toggle). Keeps the top edge
+    /// fixed so the panel stays aligned with the main panel.
+    func updateContentSize(_ size: CGSize) {
+        guard let panel, panel.isVisible else { return }
+        guard abs(panel.frame.height - size.height) > 0.5
+                || abs(panel.frame.width - size.width) > 0.5 else { return }
+
+        var frame = panel.frame
+        frame.origin.y = frame.maxY - size.height
+        frame.size = size
+        panel.setFrame(frame, display: true)
+    }
+}
+
+/// Reports the view's size so the detail panel window can follow
+/// content changes (panels don't auto-resize like SwiftUI windows).
+struct SizeReporter: ViewModifier {
+    let onChange: (CGSize) -> Void
+
+    func body(content: Content) -> some View {
+        content.background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onChange(of: proxy.size) { onChange($0) }
+            }
+        )
+    }
 }
 
 /// Grabs the NSView SwiftUI hosts this background in, so the panel

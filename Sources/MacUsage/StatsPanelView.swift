@@ -106,6 +106,7 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
+            .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
             .onHover { hover(.temperature, isInside: $0) }
     }
 
@@ -401,9 +402,23 @@ private func fanColor(_ fan: FanDetailReading) -> Color {
 struct TemperatureDetailColumn: View {
     @EnvironmentObject var statsStore: StatsStore
 
+    /// Grid of chips vs. named sensor rows — remembered across opens.
+    @AppStorage("showsTemperatureSensorNames") private var showsSensorNames = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            DetailColumnHeader(title: "Temperature Details")
+            HStack {
+                DetailColumnHeader(title: "Temperature Details")
+                Spacer()
+                Button {
+                    showsSensorNames.toggle()
+                } label: {
+                    Image(systemName: showsSensorNames ? "square.grid.3x2" : "list.bullet")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(showsSensorNames ? "Show compact grid" : "Show sensor names")
+            }
             if statsStore.temperatures.isEmpty {
                 StatSectionCard(title: "Sensors") {
                     Text("No temperature sensors available")
@@ -417,7 +432,11 @@ struct TemperatureDetailColumn: View {
                         .filter { $0.category == category }
                         .sorted { $0.celsius > $1.celsius }
                     if !readings.isEmpty {
-                        TemperatureCategoryCard(category: category, readings: readings)
+                        TemperatureCategoryCard(
+                            category: category,
+                            readings: readings,
+                            showsSensorNames: showsSensorNames
+                        )
                     }
                 }
             }
@@ -425,12 +444,13 @@ struct TemperatureDetailColumn: View {
     }
 }
 
-/// One category's sensors: a summary line plus a grid of heat chips.
-/// A chip per sensor keeps 30+ sensors compact, and color carries the
-/// story — individual sensor names ("CPU 17") never meant anything.
+/// One category's sensors: a summary line plus either a grid of heat
+/// chips (compact; color carries the story) or one row per sensor
+/// labeled with its SMC key — the hardware's real sensor identity.
 private struct TemperatureCategoryCard: View {
     let category: TemperatureCategory
     let readings: [TemperatureReading]
+    let showsSensorNames: Bool
 
     var body: some View {
         StatSectionCard(title: category.rawValue) {
@@ -444,12 +464,28 @@ private struct TemperatureCategoryCard: View {
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5),
-                    spacing: 4
-                ) {
-                    ForEach(readings) { reading in
-                        TemperatureChip(celsius: reading.celsius)
+                if showsSensorNames {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(readings) { reading in
+                            HStack {
+                                Text(reading.id)
+                                    .font(.callout.monospaced())
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(String(format: "%.0f°", reading.celsius))
+                                    .font(.callout.monospacedDigit())
+                                    .foregroundStyle(temperatureColor(reading.celsius))
+                            }
+                        }
+                    }
+                } else {
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5),
+                        spacing: 4
+                    ) {
+                        ForEach(readings) { reading in
+                            TemperatureChip(celsius: reading.celsius)
+                        }
                     }
                 }
             }
