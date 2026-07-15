@@ -404,35 +404,87 @@ struct TemperatureDetailColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "Temperature Details")
-            StatSectionCard(title: "Sensors") {
-                if statsStore.temperatures.isEmpty {
+            if statsStore.temperatures.isEmpty {
+                StatSectionCard(title: "Sensors") {
                     Text("No temperature sensors available")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        let displayOrder: [TemperatureCategory] = [.cpu, .gpu, .battery, .other]
-                        ForEach(displayOrder, id: \.self) { category in
-                            let readings = statsStore.temperatures
-                                .filter { $0.category == category }
-                                .sorted { $0.celsius > $1.celsius }
-                            if !readings.isEmpty {
-                                Text(category.rawValue.uppercased())
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                                ForEach(Array(readings.enumerated()), id: \.element.id) { index, reading in
-                                    LabeledValueRow(
-                                        label: "\(category.rawValue) \(index + 1)",
-                                        value: String(format: "%.0f°", reading.celsius)
-                                    )
-                                }
-                            }
-                        }
+                }
+            } else {
+                let displayOrder: [TemperatureCategory] = [.cpu, .gpu, .battery, .other]
+                ForEach(displayOrder, id: \.self) { category in
+                    let readings = statsStore.temperatures
+                        .filter { $0.category == category }
+                        .sorted { $0.celsius > $1.celsius }
+                    if !readings.isEmpty {
+                        TemperatureCategoryCard(category: category, readings: readings)
                     }
                 }
             }
         }
+    }
+}
+
+/// One category's sensors: a summary line plus a grid of heat chips.
+/// A chip per sensor keeps 30+ sensors compact, and color carries the
+/// story — individual sensor names ("CPU 17") never meant anything.
+private struct TemperatureCategoryCard: View {
+    let category: TemperatureCategory
+    let readings: [TemperatureReading]
+
+    var body: some View {
+        StatSectionCard(title: category.rawValue) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(readings.count == 1 ? "1 sensor" : "\(readings.count) sensors")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "avg %.0f° · max %.0f°", average, readings[0].celsius))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 5),
+                    spacing: 4
+                ) {
+                    ForEach(readings) { reading in
+                        TemperatureChip(celsius: reading.celsius)
+                    }
+                }
+            }
+        }
+    }
+
+    private var average: Double {
+        readings.reduce(0) { $0 + $1.celsius } / Double(readings.count)
+    }
+}
+
+private struct TemperatureChip: View {
+    let celsius: Double
+
+    var body: some View {
+        Text(String(format: "%.0f°", celsius))
+            .font(.caption.monospacedDigit().weight(.medium))
+            .foregroundStyle(temperatureColor(celsius))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(temperatureColor(celsius).opacity(0.18))
+            )
+    }
+}
+
+/// Cool → hot color scale shared by all heat chips.
+private func temperatureColor(_ celsius: Double) -> Color {
+    switch celsius {
+    case ..<35: return .teal
+    case ..<50: return .green
+    case ..<65: return .yellow
+    case ..<80: return .orange
+    default:    return .red
     }
 }
 
