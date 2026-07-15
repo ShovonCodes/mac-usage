@@ -33,15 +33,20 @@ After installing:
 Re-run `./install.sh` any time to update the installed copy — for example
 after pulling new code or editing the source.
 
-## Developing (run without installing)
+## Developing
+
+Edit the source, then re-run `./install.sh` — it rebuilds and replaces the
+installed app in one step.
+
+To try a build *without* touching the installed copy (you'll get a second
+gauge icon in the menu bar next to the installed one):
 
 ```bash
-./run.sh
+swift build -c release && .build/release/MacUsage &
 ```
 
-Builds a release binary and launches it directly from `.build/` — quicker
-for a change-and-test loop. To just build without launching:
-`swift build -c release` (binary lands at `.build/release/MacUsage`).
+Kill that test copy with `pkill -f '.build/release/MacUsage'` — the
+installed app keeps running.
 
 ## Behavior
 
