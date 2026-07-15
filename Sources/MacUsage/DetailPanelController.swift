@@ -22,7 +22,16 @@ final class DetailPanelController {
     /// Shows `content` in a floating panel beside the window that
     /// contains `anchorView` (the main menu bar panel). Prefers the
     /// left side; falls back to the right when the left lacks room.
-    func show<Content: View>(content: Content, besideWindowContaining anchorView: NSView?) {
+    ///
+    /// `cardFrame` is the hovered card's frame in the main panel's
+    /// coordinate space (origin at the panel's top-left): the detail
+    /// top-aligns with that card, so the pointer only has to cross the
+    /// small horizontal gap — never a long diagonal it would fall off.
+    func show<Content: View>(
+        content: Content,
+        besideWindowContaining anchorView: NSView?,
+        alignedTo cardFrame: CGRect? = nil
+    ) {
         hide()
         guard let anchorWindow = anchorView?.window else { return }
         guard let screen = anchorWindow.screen ?? NSScreen.main else { return }
@@ -41,8 +50,12 @@ final class DetailPanelController {
         } else {
             x = anchorFrame.maxX + gapBetweenPanels
         }
-        // Top-align with the main panel, but never above the visible area.
-        let y = min(anchorFrame.maxY, visibleFrame.maxY) - size.height
+
+        // Top-align with the hovered card (or the whole panel when no
+        // card frame is known), clamped to stay fully on screen.
+        let top = min(cardFrame.map { anchorFrame.maxY - $0.minY } ?? anchorFrame.maxY,
+                      visibleFrame.maxY)
+        let y = max(top - size.height, visibleFrame.minY + 8)
 
         let newPanel = FloatingPanel.make(wrapping: hostingView)
         newPanel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height),

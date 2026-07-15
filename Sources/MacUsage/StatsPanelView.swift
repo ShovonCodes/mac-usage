@@ -16,6 +16,35 @@ enum ExpandableSection {
     case temperature
 }
 
+/// Collects each hoverable card's frame (in the main panel's
+/// coordinate space) so the detail panel can vertically align with
+/// the card being hovered.
+private struct SectionFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [ExpandableSection: CGRect] = [:]
+    static func reduce(value: inout [ExpandableSection: CGRect],
+                       nextValue: () -> [ExpandableSection: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// Makes a stat card hover-expandable: reports hover changes and its
+/// own frame within the panel.
+private struct ExpandableCard: ViewModifier {
+    let section: ExpandableSection
+    let onHoverChange: (ExpandableSection, Bool) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { onHoverChange(section, $0) }
+            .background(GeometryReader { proxy in
+                Color.clear.preference(
+                    key: SectionFramePreferenceKey.self,
+                    value: [section: proxy.frame(in: .named("statsPanel"))]
+                )
+            })
+    }
+}
+
 struct StatsPanelView: View {
     @EnvironmentObject var statsStore: StatsStore
 
@@ -28,62 +57,69 @@ struct StatsPanelView: View {
     /// controller finds the menu bar panel's window to sit beside.
     @State private var hostView: NSView?
     @State private var detailPanelController = DetailPanelController()
+    /// Each hoverable card's frame within the panel, for aligning the
+    /// detail panel with the hovered card.
+    @State private var sectionFrames: [ExpandableSection: CGRect] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             cpuSection
-                .onHover { hover(.cpu, isInside: $0) }
+                .modifier(ExpandableCard(section: .cpu, onHoverChange: hover))
             memorySection
-                .onHover { hover(.memory, isInside: $0) }
+                .modifier(ExpandableCard(section: .memory, onHoverChange: hover))
             if statsStore.battery.isPresent {
                 batterySection
-                    .onHover { hover(.battery, isInside: $0) }
+                    .modifier(ExpandableCard(section: .battery, onHoverChange: hover))
             }
             temperaturesSection
-                .onHover { hover(.temperature, isInside: $0) }
+                .modifier(ExpandableCard(section: .temperature, onHoverChange: hover))
             fansSection
-                .onHover { hover(.fans, isInside: $0) }
+                .modifier(ExpandableCard(section: .fans, onHoverChange: hover))
             bottomBar
         }
         .padding(12)
         .frame(width: 300)
+        .coordinateSpace(name: "statsPanel")
+        .onPreferenceChange(SectionFramePreferenceKey.self) { sectionFrames = $0 }
         .background(HostingViewAccessor(view: $hostView))
         .onChange(of: expandedSection) { section in
-            switch section {
-            case .cpu:
-                detailPanelController.show(
-                    content: cpuDetailContent,
-                    besideWindowContaining: hostView
-                )
-            case .memory:
-                detailPanelController.show(
-                    content: memoryDetailContent,
-                    besideWindowContaining: hostView
-                )
-            case .battery:
-                detailPanelController.show(
-                    content: batteryDetailContent,
-                    besideWindowContaining: hostView
-                )
-            case .fans:
-                detailPanelController.show(
-                    content: fanDetailContent,
-                    besideWindowContaining: hostView
-                )
-            case .temperature:
-                detailPanelController.show(
-                    content: temperatureDetailContent,
-                    besideWindowContaining: hostView
-                )
-            case nil:
+            guard let section else {
                 detailPanelController.hide()
+                return
             }
+            showDetail(for: section)
         }
         // The hosting view stays alive between panel opens, so
         // onDisappear never fires — the delegate tells us instead.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
             collapseWorkItem?.cancel()
             expandedSection = nil
+        }
+    }
+
+    private func showDetail(for section: ExpandableSection) {
+        let cardFrame = sectionFrames[section]
+        switch section {
+        case .cpu:
+            detailPanelController.show(content: cpuDetailContent,
+                                       besideWindowContaining: hostView,
+                                       alignedTo: cardFrame)
+        case .memory:
+            detailPanelController.show(content: memoryDetailContent,
+                                       besideWindowContaining: hostView,
+                                       alignedTo: cardFrame)
+        case .battery:
+            detailPanelController.show(content: batteryDetailContent,
+                                       besideWindowContaining: hostView,
+                                       alignedTo: cardFrame)
+        case .fans:
+            detailPanelController.show(content: fanDetailContent,
+                                       besideWindowContaining: hostView,
+                                       alignedTo: cardFrame)
+        case .temperature:
+            detailPanelController.show(content: temperatureDetailContent,
+                                       besideWindowContaining: hostView,
+                                       alignedTo: cardFrame)
         }
     }
 
@@ -140,7 +176,7 @@ struct StatsPanelView: View {
         } else {
             let workItem = DispatchWorkItem { expandedSection = nil }
             collapseWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
         }
     }
 
