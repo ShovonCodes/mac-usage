@@ -48,6 +48,13 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/Contents/MacOS"
 cp "$BINARY" "$STAGE/Contents/MacOS/$APP_NAME"
 
+# App icon (shown in Finder, Spotlight, Launchpad).
+# Guarded so old checkouts without Assets/ still install fine.
+if [ -f "Assets/AppIcon.icns" ]; then
+  mkdir -p "$STAGE/Contents/Resources"
+  cp "Assets/AppIcon.icns" "$STAGE/Contents/Resources/AppIcon.icns"
+fi
+
 cat > "$STAGE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -67,6 +74,8 @@ cat > "$STAGE/Contents/Info.plist" <<PLIST
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
     <string>$VERSION</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>

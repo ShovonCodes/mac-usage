@@ -44,10 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: "gauge.medium",
-            accessibilityDescription: "Mac Usage"
-        )
+        statusItem.button?.image = MenuBarIcon.make()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
 

@@ -1,0 +1,21 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bgB" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#252A4A"/>
+        <stop offset="1" stop-color="#12142A"/>
+      </linearGradient>
+      <linearGradient id="neon" x1="0" y1="1" x2="1" y2="0">
+        <stop offset="0" stop-color="#33D6FF"/>
+        <stop offset="0.55" stop-color="#7A6BFF"/>
+        <stop offset="1" stop-color="#FF4FA3"/>
+      </linearGradient>
+    </defs><rect x="100.0" y="100.0" width="824" height="824" rx="185" fill="url(#bgB)"/><path d="M 329.57 722.43 A 258 258 0 1 1 694.43 722.43" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="54" fill="none" stroke-linecap="round"/><path d="M 329.57 722.43 A 258 258 0 1 1 705.53 369.38" stroke="url(#neon)" stroke-opacity="0.28" stroke-width="96" fill="none" stroke-linecap="round"/><path d="M 329.57 722.43 A 258 258 0 1 1 705.53 369.38" stroke="url(#neon)" stroke-width="54" fill="none" stroke-linecap="round"/><line x1="278.7" y1="773.3" x2="260.3" y2="791.7" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="193.2" y1="625.4" x2="168.1" y2="632.1" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="193.2" y1="454.6" x2="168.1" y2="447.9" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="278.7" y1="306.7" x2="260.3" y2="288.3" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="426.6" y1="221.2" x2="419.9" y2="196.1" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="597.4" y1="221.2" x2="604.1" y2="196.1" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="745.3" y1="306.7" x2="763.7" y2="288.3" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="830.8" y1="454.6" x2="855.9" y2="447.9" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="830.8" y1="625.4" x2="855.9" y2="632.1" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/>
+<line x1="745.3" y1="773.3" x2="763.7" y2="791.7" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="11" stroke-linecap="round"/><polygon points="666.5,403.8 501.4,528.0 473.0,574.4 522.6,552.0" fill="#FFFFFF"/><circle cx="512" cy="540" r="44" fill="#FFFFFF"/><circle cx="512" cy="540" r="20" fill="#12142A"/></svg>
