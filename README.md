@@ -7,7 +7,9 @@ fan speeds, and temperatures.
 ## Requirements
 
 - macOS 13 (Ventura) or newer
-- Xcode Command Line Tools (`xcode-select --install` if you don't have them)
+- Xcode Command Line Tools (`xcode-select --install` if you don't have them) —
+  these include the Swift compiler and Swift Package Manager, so there is
+  nothing else to install
 
 No Xcode project, no dependencies — plain Swift Package Manager.
 
