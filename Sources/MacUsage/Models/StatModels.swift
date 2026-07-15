@@ -1,0 +1,49 @@
+import Foundation
+
+// ─────────────────────────────────────────────────────────────────
+// Simple data holders ("models") for everything the panel displays.
+// Each reader fills one of these in, and the UI just renders them.
+// ─────────────────────────────────────────────────────────────────
+
+/// A snapshot of overall CPU usage, in percentages that add up with idle to 100.
+struct CpuUsageSnapshot {
+    var userPercent: Double = 0
+    var systemPercent: Double = 0
+
+    /// Total busy percentage (what most people think of as "CPU usage").
+    var totalBusyPercent: Double {
+        return userPercent + systemPercent
+    }
+}
+
+/// A snapshot of how much RAM is being used.
+struct MemoryUsageSnapshot {
+    var usedBytes: UInt64 = 0
+    var totalBytes: UInt64 = 0
+
+    var usedPercent: Double {
+        guard totalBytes > 0 else { return 0 }
+        return Double(usedBytes) / Double(totalBytes) * 100.0
+    }
+}
+
+/// One fan inside the machine (some Macs have 0, 1 or 2 fans).
+struct FanReading: Identifiable {
+    let id: Int              // fan index: 0, 1, ...
+    var speedRpm: Double = 0 // current rotations per minute
+}
+
+/// One temperature sensor grouped into a friendly category.
+struct TemperatureReading: Identifiable {
+    let id: String           // the raw 4-character SMC key, e.g. "Tp01"
+    let category: TemperatureCategory
+    var celsius: Double = 0
+}
+
+/// Friendly groups so the panel can show "CPU" instead of raw sensor codes.
+enum TemperatureCategory: String {
+    case cpu = "CPU"
+    case gpu = "GPU"
+    case battery = "Battery"
+    case other = "Other"
+}
