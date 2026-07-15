@@ -162,18 +162,34 @@ struct StatsPanelView: View {
     // MARK: CPU
 
     private var cpuSection: some View {
-        StatSectionCard(title: "CPU") {
-            HStack {
-                Spacer()
-                SegmentedCircularGauge(
-                    segments: cpuGaugeSegments(statsStore.cpuUsage),
-                    label: "\(Int(statsStore.cpuUsage.totalBusyPercent))%",
-                    caption: "CPU",
-                    size: 72
-                )
-                Spacer()
+        StatSectionCard(title: "CPU", titleTrailing: cpuTitleTrailing) {
+            VStack(spacing: 6) {
+                CpuHistoryChart(points: statsStore.cpuHistory)
+                HStack(spacing: 4) {
+                    Circle().fill(cpuUserColor).frame(width: 6, height: 6)
+                    Text("User")
+                    Text(String(format: "%.0f%%", statsStore.cpuUsage.userPercent))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Circle().fill(cpuSystemColor).frame(width: 6, height: 6)
+                    Text("System")
+                    Text(String(format: "%.0f%%", statsStore.cpuUsage.systemPercent))
+                        .foregroundStyle(.primary)
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// "22% · 52°" — current total CPU + CPU temperature. (Clock speed,
+    /// iStat-style, isn't readable without root on Apple Silicon.)
+    private var cpuTitleTrailing: String {
+        var parts = ["\(Int(statsStore.cpuUsage.totalBusyPercent))%"]
+        if let cpuTemperature = statsStore.averageTemperatures[.cpu] {
+            parts.append(String(format: "%.0f°", cpuTemperature))
+        }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: Memory
@@ -335,16 +351,44 @@ private func formatBytes(_ bytes: UInt64) -> String {
     return formatter.string(fromByteCount: Int64(bytes))
 }
 
-/// The colored arcs for the CPU ring: user + system over the gray
-/// idle track. Same colors as the hover breakdown's dots.
+/// User/system accent colors, shared by the CPU chart, its legend,
+/// and the hover breakdown's dots.
 private let cpuUserColor: Color = .blue
-private let cpuSystemColor: Color = .orange
+private let cpuSystemColor: Color = .pink
 
-private func cpuGaugeSegments(_ cpu: CpuUsageSnapshot) -> [GaugeSegment] {
-    [
-        GaugeSegment(color: cpuUserColor, fraction: cpu.userPercent / 100),
-        GaugeSegment(color: cpuSystemColor, fraction: cpu.systemPercent / 100),
-    ]
+/// Stacked bar history: user (blue) below, system (pink) above, on a
+/// fixed 0–100% scale. One bar per refresh tick, newest on the right.
+struct CpuHistoryChart: View {
+    let points: [CpuHistoryPoint]
+
+    private static let capacity = 60
+    private static let chartHeight: CGFloat = 40
+
+    var body: some View {
+        let missing = max(0, Self.capacity - points.count)
+        let padded: [CpuHistoryPoint?] =
+            Array(repeating: nil, count: missing) + points.suffix(Self.capacity).map { $0 }
+
+        HStack(alignment: .bottom, spacing: 1) {
+            ForEach(Array(padded.enumerated()), id: \.offset) { _, point in
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(cpuSystemColor)
+                        .frame(height: barHeight(point?.systemPercent))
+                    Rectangle()
+                        .fill(cpuUserColor)
+                        .frame(height: barHeight(point?.userPercent))
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: Self.chartHeight, alignment: .bottom)
+    }
+
+    private func barHeight(_ percent: Double?) -> CGFloat {
+        guard let percent, percent > 0 else { return 0.5 }
+        return max(1, Self.chartHeight * min(percent, 100) / 100)
+    }
 }
 
 /// The colored arcs for the memory ring: App / Wired / Compressed,
@@ -964,15 +1008,26 @@ private struct ProcessRow: View {
 // ─────────────────────────────────────────────────────────────────
 
 /// A rounded card with an uppercase section title — one per stat group.
+/// `titleTrailing` puts a small live value at the title row's right
+/// edge (e.g. the CPU card's "22% · 52°").
 struct StatSectionCard<Content: View>: View {
     let title: String
+    var titleTrailing: String?
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Color.accentColor)
+            HStack {
+                Text(title.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                Spacer()
+                if let titleTrailing {
+                    Text(titleTrailing)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

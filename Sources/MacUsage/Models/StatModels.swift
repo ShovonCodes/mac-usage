@@ -20,6 +20,13 @@ struct CpuUsageSnapshot {
     }
 }
 
+/// One tick of CPU usage history (for the stacked bar chart).
+struct CpuHistoryPoint: Identifiable {
+    let id: Date
+    let userPercent: Double
+    let systemPercent: Double
+}
+
 /// One row of the "top CPU processes" list.
 struct ProcessCpuUsage: Identifiable {
     let id: Int32              // pid

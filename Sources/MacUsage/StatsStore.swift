@@ -25,6 +25,7 @@ final class StatsStore: ObservableObject {
 
     // Latest values the UI displays.
     @Published var cpuUsage = CpuUsageSnapshot()
+    @Published var cpuHistory: [CpuHistoryPoint] = []
     @Published var cpuDetails = CpuDetails()
     @Published var memoryUsage = MemoryUsageSnapshot()
     @Published var memoryDetails = MemoryDetails()
@@ -69,8 +70,8 @@ final class StatsStore: ObservableObject {
     // request — slow cadence is plenty.
     private let networkInfoSampleInterval: TimeInterval = 10
     private var lastNetworkInfoSample = Date.distantPast
-    /// Throughput history for the mirrored chart (last 60 ticks).
-    private let networkHistoryCapacity = 60
+    /// Throughput/usage history for the charts (last 60 ticks).
+    private let historyCapacity = 60
 
     /// When any stat crosses these, an alert fires.
     private struct AlertThresholds {
@@ -125,14 +126,23 @@ final class StatsStore: ObservableObject {
         memoryUsage = memoryReader.readCurrentUsage()
         battery = batteryReader.readSnapshot()
 
+        cpuHistory.append(CpuHistoryPoint(
+            id: Date(),
+            userPercent: cpuUsage.userPercent,
+            systemPercent: cpuUsage.systemPercent
+        ))
+        if cpuHistory.count > historyCapacity {
+            cpuHistory.removeFirst(cpuHistory.count - historyCapacity)
+        }
+
         networkSpeed = networkSpeedReader.readCurrentSpeed()
         networkHistory.append(NetworkHistoryPoint(
             id: Date(),
             uploadBytesPerSecond: networkSpeed.uploadBytesPerSecond,
             downloadBytesPerSecond: networkSpeed.downloadBytesPerSecond
         ))
-        if networkHistory.count > networkHistoryCapacity {
-            networkHistory.removeFirst(networkHistory.count - networkHistoryCapacity)
+        if networkHistory.count > historyCapacity {
+            networkHistory.removeFirst(networkHistory.count - historyCapacity)
         }
 
         // History needs the fresh level; its first call also seeds
