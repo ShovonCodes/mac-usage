@@ -24,11 +24,8 @@ That fetches the latest code, builds the app, wraps it into a real
 A gauge icon appears in the menu bar; click it to open the stats panel.
 Quit from the panel's Quit button.
 
-Want it to start automatically at every login? Use this instead:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ShovonCodes/mac-usage/main/bootstrap.sh | LOGIN=1 bash
-```
+The installer asks whether the app should start automatically at login —
+answer `y` or `n`.
 
 After installing:
 
@@ -41,7 +38,7 @@ it's the same thing:
 ```bash
 git clone https://github.com/ShovonCodes/mac-usage.git
 cd mac-usage
-./install.sh          # or ./install.sh --login
+./install.sh
 ```
 
 ## Update

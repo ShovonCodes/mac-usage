@@ -4,9 +4,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/ShovonCodes/mac-usage/main/bootstrap.sh | bash
 #
-# Also register "start at login":
-#
-#   curl -fsSL https://raw.githubusercontent.com/ShovonCodes/mac-usage/main/bootstrap.sh | LOGIN=1 bash
+# The installer asks whether the app should start at login.
 #
 # Running it again later = update: it always fetches the latest
 # main branch, rebuilds, and replaces the installed app in place.
@@ -30,8 +28,4 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 echo "▸ Fetching the latest MacUsage..."
 git clone --quiet --depth 1 "$REPO_URL" "$TMP_DIR/mac-usage"
 
-if [ "${LOGIN:-0}" = "1" ]; then
-  "$TMP_DIR/mac-usage/install.sh" --login
-else
-  "$TMP_DIR/mac-usage/install.sh"
-fi
+"$TMP_DIR/mac-usage/install.sh"

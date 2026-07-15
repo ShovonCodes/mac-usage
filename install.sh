@@ -96,12 +96,18 @@ echo "✓ Installed and launched — look for the gauge icon in the menu bar."
 echo "  (Spotlight can now find it: ⌘Space → \"$DISPLAY_NAME\")"
 
 # 6. Login item (optional) ─────────────────────────────────────────
-if [ "$WANT_LOGIN_ITEM" = "ask" ] && [ -t 0 ]; then
-  read -r -p "Start $DISPLAY_NAME automatically at login? [y/N] " reply
-  case "$reply" in
-    [Yy]*) WANT_LOGIN_ITEM="yes" ;;
-    *)     WANT_LOGIN_ITEM="no"  ;;
-  esac
+# Ask via /dev/tty (the terminal itself), not stdin: piped installs
+# (curl | bash) use stdin for the script, so it can't carry answers.
+if [ "$WANT_LOGIN_ITEM" = "ask" ]; then
+  if { read -r -p "Start $DISPLAY_NAME automatically at login? [y/N] " reply < /dev/tty; } 2>/dev/null; then
+    case "$reply" in
+      [Yy]*) WANT_LOGIN_ITEM="yes" ;;
+      *)     WANT_LOGIN_ITEM="no"  ;;
+    esac
+  else
+    # No terminal attached (CI, scripted install) — default to no.
+    WANT_LOGIN_ITEM="no"
+  fi
 fi
 
 if [ "$WANT_LOGIN_ITEM" = "yes" ]; then
@@ -118,5 +124,6 @@ OSA
     echo "  Add it manually: System Settings → General → Login Items → \"+\" → $APP_PATH"
   fi
 else
-  echo "  Tip: to start it at every login, run  ./install.sh --login"
+  echo "  Skipped start-at-login. Enable it any time:"
+  echo "  System Settings → General → Login Items → \"+\" → $APP_PATH"
 fi
