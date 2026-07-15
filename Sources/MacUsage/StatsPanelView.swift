@@ -7,23 +7,61 @@ import AppKit
 // with small uppercase headers, gauges, and clean rows.
 // ─────────────────────────────────────────────────────────────────
 
+/// Stat cards that can expand a detail column when hovered.
+enum ExpandableSection {
+    case memory
+}
+
 struct StatsPanelView: View {
     @EnvironmentObject var statsStore: StatsStore
 
+    /// Which card's detail column is currently expanded, if any.
+    @State private var expandedSection: ExpandableSection?
+    /// Pending "collapse the detail column" action; cancelled whenever
+    /// the pointer re-enters the card or the detail column itself.
+    @State private var collapseWorkItem: DispatchWorkItem?
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            cpuSection
-            memorySection
-            fansSection
-            temperaturesSection
-            bottomBar
+        HStack(alignment: .top, spacing: 10) {
+            if expandedSection == .memory {
+                MemoryDetailColumn()
+                    .frame(width: 240)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .onHover { hover(.memory, isInside: $0) }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                cpuSection
+                memorySection
+                    .onHover { hover(.memory, isInside: $0) }
+                fansSection
+                temperaturesSection
+                bottomBar
+            }
+            .frame(width: 276)
         }
         .padding(12)
-        .frame(width: 300)
         // Tell the store when the panel opens/closes so it can switch
         // between the fast (2s) and idle (15s) refresh intervals.
         .onAppear { statsStore.panelDidOpen() }
         .onDisappear { statsStore.panelDidClose() }
+    }
+
+    // MARK: Hover expansion
+
+    /// Expands `section` while the pointer is over its card or its
+    /// detail column. Collapsing is slightly delayed so the pointer
+    /// can cross the gap between the two without the column vanishing.
+    private func hover(_ section: ExpandableSection, isInside: Bool) {
+        collapseWorkItem?.cancel()
+        if isInside {
+            withAnimation(.easeInOut(duration: 0.15)) { expandedSection = section }
+        } else {
+            let workItem = DispatchWorkItem {
+                withAnimation(.easeInOut(duration: 0.15)) { expandedSection = nil }
+            }
+            collapseWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+        }
     }
 
     // MARK: CPU
@@ -61,11 +99,11 @@ struct StatsPanelView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledValueRow(
                         label: "Used",
-                        value: Self.formatBytes(statsStore.memoryUsage.usedBytes)
+                        value: formatBytes(statsStore.memoryUsage.usedBytes)
                     )
                     LabeledValueRow(
                         label: "Total",
-                        value: Self.formatBytes(statsStore.memoryUsage.totalBytes)
+                        value: formatBytes(statsStore.memoryUsage.totalBytes)
                     )
                 }
             }
@@ -138,12 +176,102 @@ struct StatsPanelView: View {
         .padding(.top, 2)
     }
 
-    // MARK: Helpers
+}
 
-    private static func formatBytes(_ bytes: UInt64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .memory
-        return formatter.string(fromByteCount: Int64(bytes))
+/// "14.4 GB"-style formatting shared by the main panel and the
+/// memory detail column.
+private func formatBytes(_ bytes: UInt64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .memory
+    return formatter.string(fromByteCount: Int64(bytes))
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Memory hover detail: breakdown + top processes
+// ─────────────────────────────────────────────────────────────────
+
+struct MemoryDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            StatSectionCard(title: "Breakdown") {
+                VStack(alignment: .leading, spacing: 4) {
+                    BreakdownRow(color: .blue, label: "App",
+                                 bytes: statsStore.memoryDetails.breakdown.appBytes)
+                    BreakdownRow(color: .pink, label: "Wired",
+                                 bytes: statsStore.memoryDetails.breakdown.wiredBytes)
+                    BreakdownRow(color: .yellow, label: "Compressed",
+                                 bytes: statsStore.memoryDetails.breakdown.compressedBytes)
+                    BreakdownRow(color: .gray, label: "Free",
+                                 bytes: statsStore.memoryDetails.breakdown.freeBytes)
+                }
+            }
+            StatSectionCard(title: "Processes") {
+                if statsStore.memoryDetails.topProcesses.isEmpty {
+                    Text("Measuring…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(statsStore.memoryDetails.topProcesses) { process in
+                            ProcessMemoryRow(process: process)
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct BreakdownRow: View {
+    let color: Color
+    let label: String
+    let bytes: UInt64
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(formatBytes(bytes))
+                .font(.callout.monospacedDigit())
+        }
+    }
+}
+
+private struct ProcessMemoryRow: View {
+    let process: ProcessMemoryUsage
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(nsImage: Self.icon(forExecutablePath: process.executablePath))
+                .resizable()
+                .frame(width: 16, height: 16)
+            Text(process.name)
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+            Text(formatBytes(process.memoryBytes))
+                .font(.callout.monospacedDigit())
+                .layoutPriority(1)
+        }
+    }
+
+    /// The app icon for a process. Helpers live inside the main app's
+    /// bundle (".../Slack.app/Contents/.../Slack Helper"), so use the
+    /// outermost .app bundle; bare executables get the generic icon.
+    private static func icon(forExecutablePath path: String) -> NSImage {
+        if let appRange = path.range(of: ".app/") {
+            return NSWorkspace.shared.icon(forFile: String(path[..<appRange.lowerBound]) + ".app")
+        }
+        return NSWorkspace.shared.icon(forFile: path)
     }
 }
 

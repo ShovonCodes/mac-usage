@@ -64,6 +64,10 @@ installed app keeps running.
 ## Behavior
 
 - Menu bar shows only an icon — all stats live in the click-to-open panel.
+- Hovering the Memory card expands a detail column: an
+  App/Wired/Compressed/Free breakdown plus the five processes using the
+  most RAM (with their app icons). Other cards will get the same
+  treatment over time.
 - Panel open: stats refresh every **2 seconds**.
 - Panel closed: a light background refresh every **15 seconds** keeps the
   data warm so the panel never opens empty.
@@ -78,6 +82,7 @@ installed app keeps running.
 | `StatsStore.swift` | Owns readers + the adaptive refresh timer |
 | `Readers/CpuUsageReader.swift` | CPU % from kernel tick counters |
 | `Readers/MemoryUsageReader.swift` | RAM usage from kernel VM statistics |
+| `Readers/MemoryDetailsReader.swift` | Memory breakdown + top processes (for the hover panel) |
 | `Readers/SmcConnection.swift` | Low-level channel to the SMC chip (IOKit) |
 | `Readers/FanAndTemperatureReader.swift` | Fan RPM + temp sensors on top of SMC |
 | `Models/StatModels.swift` | Plain data structs the UI renders |

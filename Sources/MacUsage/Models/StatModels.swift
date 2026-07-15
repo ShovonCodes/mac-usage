@@ -47,3 +47,25 @@ enum TemperatureCategory: String {
     case battery = "Battery"
     case other = "Other"
 }
+
+/// Activity-Monitor-style split of where the RAM is going.
+struct MemoryBreakdown {
+    var appBytes: UInt64 = 0
+    var wiredBytes: UInt64 = 0
+    var compressedBytes: UInt64 = 0
+    var freeBytes: UInt64 = 0
+}
+
+/// One row of the "top memory processes" list.
+struct ProcessMemoryUsage: Identifiable {
+    let id: Int32              // pid
+    let name: String           // "Slack", "WindowServer", ...
+    let executablePath: String // used to look up the app icon
+    let memoryBytes: UInt64
+}
+
+/// Everything the expanded Memory hover panel displays.
+struct MemoryDetails {
+    var breakdown = MemoryBreakdown()
+    var topProcesses: [ProcessMemoryUsage] = []
+}
