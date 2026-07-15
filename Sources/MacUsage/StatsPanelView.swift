@@ -349,6 +349,11 @@ private func batteryStatusText(_ battery: BatterySnapshot) -> String {
     return "Discharging"
 }
 
+/// 312 → "5:12".
+private func minutesText(_ minutes: Int) -> String {
+    String(format: "%d:%02d", minutes / 60, minutes % 60)
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Memory hover detail: breakdown + top processes
 // ─────────────────────────────────────────────────────────────────
@@ -415,6 +420,22 @@ struct BatteryDetailColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "Battery Details")
+            StatSectionCard(title: "Charge") {
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledValueRow(
+                        label: "Remaining charge",
+                        value: "\(Int(statsStore.battery.levelPercent))%"
+                    )
+                    LabeledValueRow(
+                        label: "Time remaining",
+                        value: batteryTimeText(statsStore.battery)
+                    )
+                    LabeledValueRow(
+                        label: "Time on battery",
+                        value: statsStore.timeOnBatteryMinutes.map(minutesText) ?? "—"
+                    )
+                }
+            }
             StatSectionCard(title: "Last 24 Hours") {
                 if statsStore.batteryHistory.allSatisfy({ $0.levelPercent == nil }) {
                     Text("Collecting history…")

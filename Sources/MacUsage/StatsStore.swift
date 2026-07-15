@@ -30,6 +30,8 @@ final class StatsStore: ObservableObject {
     @Published var memoryDetails = MemoryDetails()
     @Published var battery = BatterySnapshot()
     @Published var batteryHistory: [BatteryHistoryPoint] = []
+    /// Minutes since the Mac was last on AC power (nil while plugged in).
+    @Published var timeOnBatteryMinutes: Int?
     @Published var fans: [FanReading] = []
     @Published var fanDetails: [FanDetailReading] = []
     @Published var averageTemperatures: [TemperatureCategory: Double] = [:]
@@ -98,10 +100,15 @@ final class StatsStore: ObservableObject {
         if battery.isPresent {
             let batteryHistoryReader = self.batteryHistoryReader
             let level = battery.levelPercent
+            let isOnBattery = !battery.isPluggedIn
             Task.detached(priority: .utility) {
-                let history = batteryHistoryReader.recordAndBucket(levelPercent: level)
+                let result = batteryHistoryReader.recordAndBucket(
+                    levelPercent: level,
+                    isOnBattery: isOnBattery
+                )
                 await MainActor.run { [weak self] in
-                    self?.batteryHistory = history
+                    self?.batteryHistory = result.points
+                    self?.timeOnBatteryMinutes = result.timeOnBatteryMinutes
                 }
             }
         }
