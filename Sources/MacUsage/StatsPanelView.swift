@@ -335,6 +335,9 @@ private struct ProcessMemoryRow: View {
     /// bundle (".../Slack.app/Contents/.../Slack Helper"), so use the
     /// outermost .app bundle; bare executables get the generic icon.
     private static func icon(forExecutablePath path: String) -> NSImage {
+        guard !path.isEmpty else {
+            return NSWorkspace.shared.icon(for: .unixExecutable)
+        }
         if let appRange = path.range(of: ".app/") {
             return NSWorkspace.shared.icon(forFile: String(path[..<appRange.lowerBound]) + ".app")
         }

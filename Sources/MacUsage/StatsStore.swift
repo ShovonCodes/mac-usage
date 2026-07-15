@@ -42,6 +42,11 @@ final class StatsStore: ObservableObject {
     private var refreshTimer: Timer?
     private var isPanelOpen = false
 
+    // The process list samples with `top`, which costs ~0.5s of CPU
+    // per run — too heavy for every 2s tick, so it gets its own pace.
+    private let memoryDetailsSampleInterval: TimeInterval = 6
+    private var lastMemoryDetailsSample = Date.distantPast
+
     init() {
         // Take a first sample right away so the first panel open isn't empty.
         // (CPU % needs two samples to show a real number; this is sample #1.)
@@ -90,9 +95,12 @@ final class StatsStore: ObservableObject {
             }
         }
 
-        // Memory details spawn a `ps` process — only worth doing while
-        // someone can see the panel, and never on the main thread.
-        if isPanelOpen {
+        // Memory details spawn a `top` sample — only worth doing while
+        // someone can see the panel, never on the main thread, and at
+        // most every few seconds (see memoryDetailsSampleInterval).
+        if isPanelOpen,
+           Date().timeIntervalSince(lastMemoryDetailsSample) >= memoryDetailsSampleInterval {
+            lastMemoryDetailsSample = Date()
             let memoryDetailsReader = self.memoryDetailsReader
             Task.detached(priority: .utility) {
                 let details = memoryDetailsReader.readCurrentDetails()
