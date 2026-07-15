@@ -25,7 +25,7 @@ A gauge icon appears in the menu bar; click it to open the stats panel.
 Quit from the panel's Quit button.
 
 The installer asks whether the app should start automatically at login —
-answer `y` or `n`.
+press Enter for yes, or answer `n`.
 
 After installing:
 

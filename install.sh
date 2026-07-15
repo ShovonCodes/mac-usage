@@ -102,11 +102,11 @@ if [ "$WANT_LOGIN_ITEM" = "ask" ]; then
   # Probe for a terminal first (fd 3), silencing only the probe:
   # read's own prompt goes to stderr and must stay visible.
   if { exec 3< /dev/tty; } 2>/dev/null; then
-    read -r -p "Start $DISPLAY_NAME automatically at login? [y/N] " reply <&3
+    read -r -p "Start $DISPLAY_NAME automatically at login? [Y/n] " reply <&3
     exec 3<&-
     case "$reply" in
-      [Yy]*) WANT_LOGIN_ITEM="yes" ;;
-      *)     WANT_LOGIN_ITEM="no"  ;;
+      [Nn]*) WANT_LOGIN_ITEM="no"  ;;
+      *)     WANT_LOGIN_ITEM="yes" ;;
     esac
   else
     # No terminal attached (CI, scripted install) — default to no.
