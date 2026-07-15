@@ -28,30 +28,37 @@ struct StatsPanelView: View {
     @State private var hostView: NSView?
     @State private var detailPanelController = DetailPanelController()
 
+    // Which cards the user wants to see — persisted so hidden cards
+    // stay hidden across launches.
+    @AppStorage("showCpuCard") private var showsCpuCard = true
+    @AppStorage("showMemoryCard") private var showsMemoryCard = true
+    @AppStorage("showBatteryCard") private var showsBatteryCard = true
+    @AppStorage("showNetworkCard") private var showsNetworkCard = true
+    @AppStorage("showTemperatureCard") private var showsTemperatureCard = true
+    @AppStorage("showFansCard") private var showsFansCard = true
+
+    @State private var isShowingSettings = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !statsStore.activeAlerts.isEmpty {
-                alertBanner
+            if isShowingSettings {
+                settingsContent
+            } else {
+                statsContent
             }
-            cpuSection
-                .onHover { if $0 { expandedSection = .cpu } }
-            memorySection
-                .onHover { if $0 { expandedSection = .memory } }
-            if statsStore.battery.isPresent {
-                batterySection
-                    .onHover { if $0 { expandedSection = .battery } }
-            }
-            networkSection
-                .onHover { if $0 { expandedSection = .network } }
-            temperaturesSection
-                .onHover { if $0 { expandedSection = .temperature } }
-            fansSection
-                .onHover { if $0 { expandedSection = .fans } }
-            bottomBar
         }
         .padding(12)
         .frame(width: 300)
         .background(HostingViewAccessor(view: $hostView))
+        // Cards toggling on/off (and the settings page itself) change
+        // the content height — tell the delegate to resize the panel.
+        .modifier(SizeReporter { size in
+            NotificationCenter.default.post(
+                name: AppDelegate.panelContentSizeChanged,
+                object: nil,
+                userInfo: ["size": NSValue(size: size)]
+            )
+        })
         .onChange(of: expandedSection) { section in
             guard let section else {
                 detailPanelController.hide()
@@ -67,6 +74,81 @@ struct StatsPanelView: View {
         // onDisappear never fires — the delegate tells us instead.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
             expandedSection = nil
+            isShowingSettings = false
+        }
+    }
+
+    @ViewBuilder
+    private var statsContent: some View {
+        if !statsStore.activeAlerts.isEmpty {
+            alertBanner
+        }
+        if showsCpuCard {
+            cpuSection
+                .onHover { if $0 { expandedSection = .cpu } }
+        }
+        if showsMemoryCard {
+            memorySection
+                .onHover { if $0 { expandedSection = .memory } }
+        }
+        if showsBatteryCard, statsStore.battery.isPresent {
+            batterySection
+                .onHover { if $0 { expandedSection = .battery } }
+        }
+        if showsNetworkCard {
+            networkSection
+                .onHover { if $0 { expandedSection = .network } }
+        }
+        if showsTemperatureCard {
+            temperaturesSection
+                .onHover { if $0 { expandedSection = .temperature } }
+        }
+        if showsFansCard {
+            fansSection
+                .onHover { if $0 { expandedSection = .fans } }
+        }
+        bottomBar
+    }
+
+    // MARK: Settings
+
+    @ViewBuilder
+    private var settingsContent: some View {
+        HStack(spacing: 6) {
+            Button {
+                isShowingSettings = false
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            Text("Settings")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        StatSectionCard(title: "Show Cards") {
+            VStack(alignment: .leading, spacing: 6) {
+                settingToggle("CPU", isOn: $showsCpuCard)
+                settingToggle("Memory", isOn: $showsMemoryCard)
+                settingToggle("Battery", isOn: $showsBatteryCard)
+                settingToggle("Network", isOn: $showsNetworkCard)
+                settingToggle("Temperature", isOn: $showsTemperatureCard)
+                settingToggle("Fans", isOn: $showsFansCard)
+            }
+        }
+    }
+
+    private func settingToggle(_ label: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(label)
+                .font(.callout)
+            Spacer()
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
         }
     }
 
@@ -331,12 +413,22 @@ struct StatsPanelView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             Spacer()
+            Button {
+                isShowingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Settings")
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
             .buttonStyle(.plain)
             .font(.caption)
             .foregroundStyle(.secondary)
+            .padding(.leading, 8)
         }
         .padding(.top, 2)
     }

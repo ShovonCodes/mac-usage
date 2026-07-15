@@ -30,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (collapse hover details) — they never see onDisappear because
     /// the hosting view stays alive between opens.
     static let panelWillHide = Notification.Name("MacUsagePanelWillHide")
+    /// Posted by the panel content when its size changes (cards being
+    /// toggled, the settings page) so the window can follow.
+    static let panelContentSizeChanged = Notification.Name("MacUsagePanelContentSizeChanged")
 
     private let statsStore = StatsStore()
     private var statusItem: NSStatusItem!
@@ -37,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hostingView: NSHostingView<AnyView>!
     private var clickOutsideMonitor: Any?
     private var alertSubscription: AnyCancellable?
+    private var contentSizeSubscription: AnyCancellable?
 
     /// Gap between the menu bar and the top of the panel.
     private let menuBarGap: CGFloat = 5
@@ -56,6 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: AnyView(StatsPanelView().environmentObject(statsStore))
         )
         panel = FloatingPanel.make(wrapping: hostingView)
+
+        // Follow content-height changes (card toggles, settings page)
+        // while the panel is open, keeping its top edge pinned.
+        contentSizeSubscription = NotificationCenter.default
+            .publisher(for: Self.panelContentSizeChanged)
+            .sink { [weak self] notification in
+                guard let value = notification.userInfo?["size"] as? NSValue else { return }
+                Task { @MainActor in self?.resizePanel(to: value.sizeValue) }
+            }
 
         // Swap the icon to the red-badged attention glyph whenever any
         // threshold alert is firing; the tooltip names the reasons.
@@ -144,6 +157,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.hidePanel() }
         }
+    }
+
+    private func resizePanel(to size: CGSize) {
+        guard panel.isVisible else { return }
+        var frame = panel.frame
+        guard abs(frame.height - size.height) > 0.5
+                || abs(frame.width - size.width) > 0.5 else { return }
+        frame.origin.y = frame.maxY - size.height
+        frame.size = size
+        panel.setFrame(frame, display: true)
     }
 
     private func hidePanel() {
