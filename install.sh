@@ -99,7 +99,11 @@ echo "  (Spotlight can now find it: ⌘Space → \"$DISPLAY_NAME\")"
 # Ask via /dev/tty (the terminal itself), not stdin: piped installs
 # (curl | bash) use stdin for the script, so it can't carry answers.
 if [ "$WANT_LOGIN_ITEM" = "ask" ]; then
-  if { read -r -p "Start $DISPLAY_NAME automatically at login? [y/N] " reply < /dev/tty; } 2>/dev/null; then
+  # Probe for a terminal first (fd 3), silencing only the probe:
+  # read's own prompt goes to stderr and must stay visible.
+  if { exec 3< /dev/tty; } 2>/dev/null; then
+    read -r -p "Start $DISPLAY_NAME automatically at login? [y/N] " reply <&3
+    exec 3<&-
     case "$reply" in
       [Yy]*) WANT_LOGIN_ITEM="yes" ;;
       *)     WANT_LOGIN_ITEM="no"  ;;
