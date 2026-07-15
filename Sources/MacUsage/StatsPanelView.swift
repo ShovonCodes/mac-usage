@@ -12,6 +12,7 @@ enum ExpandableSection {
     case cpu
     case memory
     case battery
+    case network
     case fans
     case temperature
 }
@@ -40,6 +41,8 @@ struct StatsPanelView: View {
                 batterySection
                     .onHover { if $0 { expandedSection = .battery } }
             }
+            networkSection
+                .onHover { if $0 { expandedSection = .network } }
             temperaturesSection
                 .onHover { if $0 { expandedSection = .temperature } }
             fansSection
@@ -100,6 +103,9 @@ struct StatsPanelView: View {
         case .battery:
             detailPanelController.show(content: batteryDetailContent,
                                        besideWindowContaining: hostView)
+        case .network:
+            detailPanelController.show(content: networkDetailContent,
+                                       besideWindowContaining: hostView)
         case .fans:
             detailPanelController.show(content: fanDetailContent,
                                        besideWindowContaining: hostView)
@@ -128,6 +134,14 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
+    }
+
+    private var networkDetailContent: some View {
+        NetworkDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
     }
 
     private var fanDetailContent: some View {
@@ -214,6 +228,32 @@ struct StatsPanelView: View {
                     caption: "HEALTH",
                     size: 72
                 )
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: Network
+
+    private var networkSection: some View {
+        StatSectionCard(title: "Network") {
+            HStack {
+                Spacer()
+                VStack(spacing: 2) {
+                    Text(speedText(statsStore.networkSpeed.uploadBytesPerSecond))
+                        .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                    Text("↑ Upload")
+                        .font(.caption2)
+                        .foregroundStyle(networkUploadColor)
+                }
+                Spacer()
+                VStack(spacing: 2) {
+                    Text(speedText(statsStore.networkSpeed.downloadBytesPerSecond))
+                        .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                    Text("↓ Download")
+                        .font(.caption2)
+                        .foregroundStyle(networkDownloadColor)
+                }
                 Spacer()
             }
         }
@@ -327,6 +367,17 @@ private func pressureColor(_ percent: Double) -> Color {
     return .red
 }
 
+/// Upload/download accent colors (match the iStat-style chart).
+private let networkUploadColor: Color = .pink
+private let networkDownloadColor: Color = .blue
+
+/// "33.8 MB/s"-style throughput formatting.
+private func speedText(_ bytesPerSecond: Double) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .decimal
+    return formatter.string(fromByteCount: Int64(max(0, bytesPerSecond))) + "/s"
+}
+
 /// Blue while charging, then green/orange/red as the level drops.
 private func batteryLevelColor(_ battery: BatterySnapshot) -> Color {
     if battery.isCharging { return .blue }
@@ -408,6 +459,131 @@ struct DetailColumnHeader: View {
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.leading, 2)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Network hover detail: activity chart + connection + top processes
+// ─────────────────────────────────────────────────────────────────
+
+struct NetworkDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "Network Details")
+            StatSectionCard(title: "Activity") {
+                NetworkHistoryChart(points: statsStore.networkHistory)
+            }
+            StatSectionCard(title: "Connection") {
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledValueRow(
+                        label: "Wi-Fi",
+                        value: statsStore.networkDetails.info.wifiName ?? "—"
+                    )
+                    LabeledValueRow(
+                        label: "Public IP",
+                        value: statsStore.networkDetails.info.publicIP ?? "…"
+                    )
+                    ForEach(statsStore.networkDetails.info.localIPv4, id: \.self) { address in
+                        LabeledValueRow(label: "IP", value: address)
+                    }
+                    ForEach(statsStore.networkDetails.info.localIPv6, id: \.self) { address in
+                        HStack {
+                            Text("IPv6")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(address)
+                                .font(.system(size: 10).monospacedDigit())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                }
+            }
+            StatSectionCard(title: "Processes") {
+                if !statsStore.networkDetails.hasProcessSample {
+                    Text("Measuring… (takes a few seconds)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if statsStore.networkDetails.topProcesses.isEmpty {
+                    Text("No network activity")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(statsStore.networkDetails.topProcesses) { process in
+                            ProcessRow(
+                                name: process.name,
+                                executablePath: process.executablePath,
+                                value: speedText(process.totalBytesPerSecond)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Mirrored bar chart: upload grows upward (pink), download grows
+/// downward (blue). Each direction is normalized to its own peak —
+/// download usually dwarfs upload, and a shared scale would flatten
+/// the upload half into invisibility.
+private struct NetworkHistoryChart: View {
+    let points: [NetworkHistoryPoint]
+
+    private static let capacity = 60
+    private static let halfHeight: CGFloat = 28
+
+    var body: some View {
+        let padded = Self.paddedPoints(points)
+        let peakUpload = max(points.map(\.uploadBytesPerSecond).max() ?? 0, 1)
+        let peakDownload = max(points.map(\.downloadBytesPerSecond).max() ?? 0, 1)
+
+        VStack(spacing: 4) {
+            VStack(spacing: 1) {
+                HStack(alignment: .bottom, spacing: 1) {
+                    ForEach(Array(padded.enumerated()), id: \.offset) { _, point in
+                        Capsule()
+                            .fill(networkUploadColor)
+                            .frame(height: barHeight(point?.uploadBytesPerSecond, peak: peakUpload))
+                            .frame(maxWidth: .infinity, alignment: .bottom)
+                    }
+                }
+                .frame(height: Self.halfHeight, alignment: .bottom)
+                HStack(alignment: .top, spacing: 1) {
+                    ForEach(Array(padded.enumerated()), id: \.offset) { _, point in
+                        Capsule()
+                            .fill(networkDownloadColor)
+                            .frame(height: barHeight(point?.downloadBytesPerSecond, peak: peakDownload))
+                            .frame(maxWidth: .infinity, alignment: .top)
+                    }
+                }
+                .frame(height: Self.halfHeight, alignment: .top)
+            }
+            HStack(spacing: 4) {
+                Circle().fill(networkUploadColor).frame(width: 6, height: 6)
+                Text("Peak ↑ \(speedText(peakUpload))")
+                Spacer()
+                Circle().fill(networkDownloadColor).frame(width: 6, height: 6)
+                Text("Peak ↓ \(speedText(peakDownload))")
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func barHeight(_ value: Double?, peak: Double) -> CGFloat {
+        guard let value, value > 0 else { return 1 }
+        return max(2, Self.halfHeight * value / peak)
+    }
+
+    /// Right-align recent samples: pad the left with nils until full.
+    private static func paddedPoints(_ points: [NetworkHistoryPoint]) -> [NetworkHistoryPoint?] {
+        let missing = max(0, capacity - points.count)
+        return Array(repeating: nil, count: missing) + points.suffix(capacity).map { $0 }
     }
 }
 

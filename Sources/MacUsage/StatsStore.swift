@@ -28,6 +28,9 @@ final class StatsStore: ObservableObject {
     @Published var cpuDetails = CpuDetails()
     @Published var memoryUsage = MemoryUsageSnapshot()
     @Published var memoryDetails = MemoryDetails()
+    @Published var networkSpeed = NetworkSpeedSnapshot()
+    @Published var networkHistory: [NetworkHistoryPoint] = []
+    @Published var networkDetails = NetworkDetails()
     @Published var battery = BatterySnapshot()
     @Published var batteryHistory: [BatteryHistoryPoint] = []
     /// Minutes since the Mac was last on AC power (nil while plugged in).
@@ -47,6 +50,9 @@ final class StatsStore: ObservableObject {
     private let memoryDetailsReader = MemoryDetailsReader()
     private let batteryReader = BatteryReader()
     private let batteryHistoryReader = BatteryHistoryReader()
+    private let networkSpeedReader = NetworkSpeedReader()
+    private let networkInfoReader = NetworkInfoReader()
+    private let networkProcessesReader = NetworkProcessesReader()
     private let sensorReader = FanAndTemperatureReader()
 
     // Refresh timing.
@@ -59,6 +65,13 @@ final class StatsStore: ObservableObject {
     // per run — too heavy for every 2s tick, so it gets its own pace.
     private let memoryDetailsSampleInterval: TimeInterval = 6
     private var lastMemoryDetailsSample = Date.distantPast
+
+    // nettop needs a ~5s sampling window per run and network info
+    // makes a (cached) public-IP request — both get slow cadences.
+    private let networkProcessesSampleInterval: TimeInterval = 10
+    private var lastNetworkProcessesSample = Date.distantPast
+    /// Throughput history for the mirrored chart (last 60 ticks).
+    private let networkHistoryCapacity = 60
 
     /// When any stat crosses these, an alert fires.
     private struct AlertThresholds {
@@ -107,10 +120,21 @@ final class StatsStore: ObservableObject {
     }
 
     private func refreshAllStats() {
-        // CPU, memory and battery are cheap — read them on the main thread.
+        // CPU, memory, battery and network speed are cheap — read them
+        // on the main thread.
         cpuUsage = cpuReader.readCurrentUsage()
         memoryUsage = memoryReader.readCurrentUsage()
         battery = batteryReader.readSnapshot()
+
+        networkSpeed = networkSpeedReader.readCurrentSpeed()
+        networkHistory.append(NetworkHistoryPoint(
+            id: Date(),
+            uploadBytesPerSecond: networkSpeed.uploadBytesPerSecond,
+            downloadBytesPerSecond: networkSpeed.downloadBytesPerSecond
+        ))
+        if networkHistory.count > networkHistoryCapacity {
+            networkHistory.removeFirst(networkHistory.count - networkHistoryCapacity)
+        }
 
         // History needs the fresh level; its first call also seeds
         // 24h of readings from the power log (~2s), so keep it off
@@ -156,6 +180,27 @@ final class StatsStore: ObservableObject {
                 let details = cpuDetailsReader.readCurrentDetails()
                 await MainActor.run { [weak self] in
                     self?.cpuDetails = details
+                }
+            }
+        }
+
+        // Network details: nettop's ~5s sampling window and the cached
+        // public-IP lookup both stay off the main thread and only run
+        // while the panel is open, on a slow cadence.
+        if isPanelOpen,
+           Date().timeIntervalSince(lastNetworkProcessesSample) >= networkProcessesSampleInterval {
+            lastNetworkProcessesSample = Date()
+            let networkInfoReader = self.networkInfoReader
+            let networkProcessesReader = self.networkProcessesReader
+            Task.detached(priority: .utility) {
+                let info = networkInfoReader.readInfo()
+                let processes = networkProcessesReader.readTopProcesses()
+                await MainActor.run { [weak self] in
+                    self?.networkDetails = NetworkDetails(
+                        info: info,
+                        topProcesses: processes,
+                        hasProcessSample: true
+                    )
                 }
             }
         }
