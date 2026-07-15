@@ -34,6 +34,28 @@ struct CpuDetails {
     var topProcesses: [ProcessCpuUsage] = []
 }
 
+/// A snapshot of the battery's current state.
+struct BatterySnapshot {
+    var isPresent = false
+    var levelPercent: Double = 0
+    var isCharging = false
+    var isPluggedIn = false
+    /// Minutes to empty (discharging) or to full (charging); nil while
+    /// macOS is still estimating.
+    var timeRemainingMinutes: Int?
+    /// Maximum charge the battery can hold vs. its design capacity.
+    var healthPercent: Double = 0
+    var cycleCount: Int = 0
+}
+
+/// Battery level for one hour of the last day (for the hover chart).
+struct BatteryHistoryPoint: Identifiable {
+    let id: Date               // start of the hour bucket
+    /// nil = no reading recorded during that hour (e.g. Mac was asleep
+    /// the whole hour, or the app wasn't running yet).
+    let levelPercent: Double?
+}
+
 /// A snapshot of how much RAM is being used.
 struct MemoryUsageSnapshot {
     var usedBytes: UInt64 = 0

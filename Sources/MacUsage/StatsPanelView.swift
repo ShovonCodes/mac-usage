@@ -11,6 +11,7 @@ import AppKit
 enum ExpandableSection {
     case cpu
     case memory
+    case battery
     case fans
     case temperature
 }
@@ -34,6 +35,10 @@ struct StatsPanelView: View {
                 .onHover { hover(.cpu, isInside: $0) }
             memorySection
                 .onHover { hover(.memory, isInside: $0) }
+            if statsStore.battery.isPresent {
+                batterySection
+                    .onHover { hover(.battery, isInside: $0) }
+            }
             fansSection
                 .onHover { hover(.fans, isInside: $0) }
             temperaturesSection
@@ -53,6 +58,11 @@ struct StatsPanelView: View {
             case .memory:
                 detailPanelController.show(
                     content: memoryDetailContent,
+                    besideWindowContaining: hostView
+                )
+            case .battery:
+                detailPanelController.show(
+                    content: batteryDetailContent,
                     besideWindowContaining: hostView
                 )
             case .fans:
@@ -91,6 +101,14 @@ struct StatsPanelView: View {
             .frame(width: 240)
             .padding(12)
             .onHover { hover(.cpu, isInside: $0) }
+    }
+
+    private var batteryDetailContent: some View {
+        BatteryDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .onHover { hover(.battery, isInside: $0) }
     }
 
     private var fanDetailContent: some View {
@@ -163,6 +181,36 @@ struct StatsPanelView: View {
                     segments: memoryGaugeSegments(statsStore.memoryUsage),
                     label: "\(Int(statsStore.memoryUsage.usedPercent))%",
                     caption: "MEMORY",
+                    size: 72
+                )
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: Battery
+
+    private var batterySection: some View {
+        StatSectionCard(title: "Battery") {
+            HStack {
+                Spacer()
+                SegmentedCircularGauge(
+                    segments: [GaugeSegment(
+                        color: batteryLevelColor(statsStore.battery),
+                        fraction: statsStore.battery.levelPercent / 100
+                    )],
+                    label: "\(Int(statsStore.battery.levelPercent))%",
+                    caption: batteryTimeText(statsStore.battery),
+                    size: 72
+                )
+                Spacer()
+                SegmentedCircularGauge(
+                    segments: [GaugeSegment(
+                        color: .pink,
+                        fraction: statsStore.battery.healthPercent / 100
+                    )],
+                    label: "\(Int(statsStore.battery.healthPercent))%",
+                    caption: "HEALTH",
                     size: 72
                 )
                 Spacer()
@@ -278,6 +326,29 @@ private func pressureColor(_ percent: Double) -> Color {
     return .red
 }
 
+/// Blue while charging, then green/orange/red as the level drops.
+private func batteryLevelColor(_ battery: BatterySnapshot) -> Color {
+    if battery.isCharging { return .blue }
+    if battery.levelPercent > 50 { return .green }
+    if battery.levelPercent > 20 { return .orange }
+    return .red
+}
+
+/// "2:22"-style time remaining (to empty, or to full while charging).
+private func batteryTimeText(_ battery: BatterySnapshot) -> String {
+    if let minutes = battery.timeRemainingMinutes {
+        return String(format: "%d:%02d", minutes / 60, minutes % 60)
+    }
+    if battery.isPluggedIn && !battery.isCharging { return "AC" }
+    return "…" // macOS is still estimating
+}
+
+private func batteryStatusText(_ battery: BatterySnapshot) -> String {
+    if battery.isCharging { return "Charging" }
+    if battery.isPluggedIn { return "On AC power" }
+    return "Discharging"
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Memory hover detail: breakdown + top processes
 // ─────────────────────────────────────────────────────────────────
@@ -331,6 +402,96 @@ struct DetailColumnHeader: View {
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.leading, 2)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Battery hover detail: 24h level chart + health facts
+// ─────────────────────────────────────────────────────────────────
+
+struct BatteryDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "Battery Details")
+            StatSectionCard(title: "Last 24 Hours") {
+                if statsStore.batteryHistory.allSatisfy({ $0.levelPercent == nil }) {
+                    Text("Collecting history…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    BatteryHistoryChart(points: statsStore.batteryHistory)
+                }
+            }
+            StatSectionCard(title: "Health") {
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledValueRow(
+                        label: "Status",
+                        value: batteryStatusText(statsStore.battery)
+                    )
+                    LabeledValueRow(
+                        label: "Max capacity",
+                        value: String(format: "%.0f%%", statsStore.battery.healthPercent)
+                    )
+                    LabeledValueRow(
+                        label: "Cycle count",
+                        value: "\(statsStore.battery.cycleCount)"
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// One bar per hour, oldest on the left. Bar height = battery level;
+/// hours without any reading render as faint stubs.
+private struct BatteryHistoryChart: View {
+    let points: [BatteryHistoryPoint]
+
+    private static let barAreaHeight: CGFloat = 56
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(points) { point in
+                    if let level = point.levelPercent {
+                        Capsule()
+                            .fill(barColor(level))
+                            .frame(height: max(4, Self.barAreaHeight * level / 100))
+                            .frame(maxWidth: .infinity)
+                            .help(String(format: "%@ — %.0f%%", Self.hourLabel(point.id), level))
+                    } else {
+                        Capsule()
+                            .fill(Color.gray.opacity(0.25))
+                            .frame(height: 4)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .frame(height: Self.barAreaHeight, alignment: .bottom)
+            HStack {
+                if let first = points.first {
+                    Text(Self.hourLabel(first.id))
+                }
+                Spacer()
+                Text("now")
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+    }
+
+    private func barColor(_ level: Double) -> Color {
+        if level > 50 { return .green }
+        if level > 20 { return .orange }
+        return .red
+    }
+
+    private static func hourLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 }
 

@@ -84,6 +84,8 @@ installed app keeps running.
 | `Readers/CpuUsageReader.swift` | CPU % from kernel tick counters |
 | `Readers/MemoryUsageReader.swift` | RAM usage from kernel VM statistics |
 | `Readers/MemoryDetailsReader.swift` | Memory breakdown + top processes (for the hover panel) |
+| `Readers/BatteryReader.swift` | Battery level, time remaining, health, cycles (IOKit) |
+| `Readers/BatteryHistoryReader.swift` | 24h battery level history (power log + live samples) |
 | `Readers/SmcConnection.swift` | Low-level channel to the SMC chip (IOKit) |
 | `Readers/FanAndTemperatureReader.swift` | Fan RPM + temp sensors on top of SMC |
 | `Models/StatModels.swift` | Plain data structs the UI renders |

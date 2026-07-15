@@ -28,6 +28,8 @@ final class StatsStore: ObservableObject {
     @Published var cpuDetails = CpuDetails()
     @Published var memoryUsage = MemoryUsageSnapshot()
     @Published var memoryDetails = MemoryDetails()
+    @Published var battery = BatterySnapshot()
+    @Published var batteryHistory: [BatteryHistoryPoint] = []
     @Published var fans: [FanReading] = []
     @Published var fanDetails: [FanDetailReading] = []
     @Published var averageTemperatures: [TemperatureCategory: Double] = [:]
@@ -38,6 +40,8 @@ final class StatsStore: ObservableObject {
     private let cpuDetailsReader = CpuDetailsReader()
     private let memoryReader = MemoryUsageReader()
     private let memoryDetailsReader = MemoryDetailsReader()
+    private let batteryReader = BatteryReader()
+    private let batteryHistoryReader = BatteryHistoryReader()
     private let sensorReader = FanAndTemperatureReader()
 
     // Refresh timing.
@@ -83,9 +87,24 @@ final class StatsStore: ObservableObject {
     }
 
     private func refreshAllStats() {
-        // CPU and memory are cheap — read them on the main thread.
+        // CPU, memory and battery are cheap — read them on the main thread.
         cpuUsage = cpuReader.readCurrentUsage()
         memoryUsage = memoryReader.readCurrentUsage()
+        battery = batteryReader.readSnapshot()
+
+        // History needs the fresh level; its first call also seeds
+        // 24h of readings from the power log (~2s), so keep it off
+        // the main thread.
+        if battery.isPresent {
+            let batteryHistoryReader = self.batteryHistoryReader
+            let level = battery.levelPercent
+            Task.detached(priority: .utility) {
+                let history = batteryHistoryReader.recordAndBucket(levelPercent: level)
+                await MainActor.run { [weak self] in
+                    self?.batteryHistory = history
+                }
+            }
+        }
 
         // SMC calls talk to a kernel driver; run them off the main thread
         // so the UI never stutters, then publish results back on main.
