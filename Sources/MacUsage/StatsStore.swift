@@ -52,7 +52,6 @@ final class StatsStore: ObservableObject {
     private let batteryHistoryReader = BatteryHistoryReader()
     private let networkSpeedReader = NetworkSpeedReader()
     private let networkInfoReader = NetworkInfoReader()
-    private let networkProcessesReader = NetworkProcessesReader()
     private let sensorReader = FanAndTemperatureReader()
 
     // Refresh timing.
@@ -66,10 +65,10 @@ final class StatsStore: ObservableObject {
     private let memoryDetailsSampleInterval: TimeInterval = 6
     private var lastMemoryDetailsSample = Date.distantPast
 
-    // nettop needs a ~5s sampling window per run and network info
-    // makes a (cached) public-IP request — both get slow cadences.
-    private let networkProcessesSampleInterval: TimeInterval = 10
-    private var lastNetworkProcessesSample = Date.distantPast
+    // Network info spawns ipconfig and makes a (cached) public-IP
+    // request — slow cadence is plenty.
+    private let networkInfoSampleInterval: TimeInterval = 10
+    private var lastNetworkInfoSample = Date.distantPast
     /// Throughput history for the mirrored chart (last 60 ticks).
     private let networkHistoryCapacity = 60
 
@@ -184,23 +183,16 @@ final class StatsStore: ObservableObject {
             }
         }
 
-        // Network details: nettop's ~5s sampling window and the cached
-        // public-IP lookup both stay off the main thread and only run
-        // while the panel is open, on a slow cadence.
+        // Network info stays off the main thread and only runs while
+        // the panel is open, on a slow cadence.
         if isPanelOpen,
-           Date().timeIntervalSince(lastNetworkProcessesSample) >= networkProcessesSampleInterval {
-            lastNetworkProcessesSample = Date()
+           Date().timeIntervalSince(lastNetworkInfoSample) >= networkInfoSampleInterval {
+            lastNetworkInfoSample = Date()
             let networkInfoReader = self.networkInfoReader
-            let networkProcessesReader = self.networkProcessesReader
             Task.detached(priority: .utility) {
                 let info = networkInfoReader.readInfo()
-                let processes = networkProcessesReader.readTopProcesses()
                 await MainActor.run { [weak self] in
-                    self?.networkDetails = NetworkDetails(
-                        info: info,
-                        topProcesses: processes,
-                        hasProcessSample: true
-                    )
+                    self?.networkDetails = NetworkDetails(info: info)
                 }
             }
         }

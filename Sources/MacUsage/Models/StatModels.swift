@@ -69,22 +69,9 @@ struct NetworkInfo {
     var publicIP: String?
 }
 
-/// One row of the "top network processes" list.
-struct ProcessNetworkUsage: Identifiable {
-    let id: String             // nettop's "name.pid"
-    let name: String
-    let executablePath: String
-    let uploadBytesPerSecond: Double
-    let downloadBytesPerSecond: Double
-
-    var totalBytesPerSecond: Double { uploadBytesPerSecond + downloadBytesPerSecond }
-}
-
 /// Everything the expanded Network hover panel displays.
 struct NetworkDetails {
     var info = NetworkInfo()
-    var topProcesses: [ProcessNetworkUsage] = []
-    var hasProcessSample = false // false until the first nettop finishes
 }
 
 /// One currently-firing threshold alert (CPU pegged, low battery, ...).

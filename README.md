@@ -88,7 +88,6 @@ installed app keeps running.
 | `Readers/BatteryHistoryReader.swift` | 24h battery level history (power log + live samples) |
 | `Readers/NetworkSpeedReader.swift` | Up/down throughput from kernel interface counters |
 | `Readers/NetworkInfoReader.swift` | Wi-Fi name, local IPs, public IP (cached) |
-| `Readers/NetworkProcessesReader.swift` | Top processes by network use (nettop) |
 | `Readers/SmcConnection.swift` | Low-level channel to the SMC chip (IOKit) |
 | `Readers/FanAndTemperatureReader.swift` | Fan RPM + temp sensors on top of SMC |
 | `Models/StatModels.swift` | Plain data structs the UI renders |

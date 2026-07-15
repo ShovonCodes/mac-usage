@@ -502,27 +502,6 @@ struct NetworkDetailColumn: View {
                     }
                 }
             }
-            StatSectionCard(title: "Processes") {
-                if !statsStore.networkDetails.hasProcessSample {
-                    Text("Measuring… (takes a few seconds)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if statsStore.networkDetails.topProcesses.isEmpty {
-                    Text("No network activity")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(statsStore.networkDetails.topProcesses) { process in
-                            ProcessRow(
-                                name: process.name,
-                                executablePath: process.executablePath,
-                                value: speedText(process.totalBytesPerSecond)
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
