@@ -48,6 +48,12 @@ struct BatterySnapshot {
     var cycleCount: Int = 0
 }
 
+/// One currently-firing threshold alert (CPU pegged, low battery, ...).
+struct StatAlert: Identifiable, Equatable {
+    let id: String       // stable per rule: "cpu", "memory", ...
+    let message: String  // "CPU at 97%"
+}
+
 /// Battery level for one hour of the last day (for the hover chart).
 struct BatteryHistoryPoint: Identifiable {
     let id: Date               // start of the hour bucket

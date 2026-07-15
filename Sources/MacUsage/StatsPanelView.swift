@@ -29,6 +29,9 @@ struct StatsPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if !statsStore.activeAlerts.isEmpty {
+                alertBanner
+            }
             cpuSection
                 .onHover { if $0 { expandedSection = .cpu } }
             memorySection
@@ -62,6 +65,28 @@ struct StatsPanelView: View {
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
             expandedSection = nil
         }
+    }
+
+    /// Red banner at the top listing every firing threshold alert —
+    /// the panel-side counterpart of the menu bar badge.
+    private var alertBanner: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(statsStore.activeAlerts) { alert in
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    Text(alert.message)
+                        .font(.caption.weight(.medium))
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.red.opacity(0.15))
+        )
     }
 
     private func showDetail(for section: ExpandableSection) {

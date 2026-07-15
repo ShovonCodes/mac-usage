@@ -36,6 +36,9 @@ final class StatsStore: ObservableObject {
     @Published var fanDetails: [FanDetailReading] = []
     @Published var averageTemperatures: [TemperatureCategory: Double] = [:]
     @Published var temperatures: [TemperatureReading] = []
+    /// Threshold alerts currently firing (drives the menu bar badge
+    /// and the red banner at the top of the panel).
+    @Published var activeAlerts: [StatAlert] = []
 
     // The readers that actually collect the data.
     private let cpuReader = CpuUsageReader()
@@ -56,6 +59,21 @@ final class StatsStore: ObservableObject {
     // per run — too heavy for every 2s tick, so it gets its own pace.
     private let memoryDetailsSampleInterval: TimeInterval = 6
     private var lastMemoryDetailsSample = Date.distantPast
+
+    /// When any stat crosses these, an alert fires.
+    private struct AlertThresholds {
+        var cpuBusyPercent: Double
+        var memoryPressurePercent: Double
+        var cpuTemperatureCelsius: Double
+        var batteryLowPercent: Double
+    }
+
+    private let alertThresholds = AlertThresholds(
+        cpuBusyPercent: 90,
+        memoryPressurePercent: 80,
+        cpuTemperatureCelsius: 90,
+        batteryLowPercent: 10
+    )
 
     init() {
         // Take a first sample right away so the first panel open isn't empty.
@@ -125,8 +143,10 @@ final class StatsStore: ObservableObject {
                 self?.fans = fanDetails.map { FanReading(id: $0.id, speedRpm: $0.currentRpm) }
                 self?.temperatures = temperatureReadings
                 self?.averageTemperatures = averages
+                self?.evaluateAlerts() // temps arrive late — re-check
             }
         }
+        evaluateAlerts()
 
         // CPU process list is one cheap `ps` call — refresh it on every
         // tick while the panel is open, off the main thread.
@@ -153,6 +173,44 @@ final class StatsStore: ObservableObject {
                     self?.memoryDetails = details
                 }
             }
+        }
+    }
+
+    // MARK: Threshold alerts
+
+    private func evaluateAlerts() {
+        var alerts: [StatAlert] = []
+
+        if cpuUsage.totalBusyPercent > alertThresholds.cpuBusyPercent {
+            alerts.append(StatAlert(
+                id: "cpu",
+                message: String(format: "CPU at %.0f%%", cpuUsage.totalBusyPercent)
+            ))
+        }
+        if memoryUsage.pressurePercent > alertThresholds.memoryPressurePercent {
+            alerts.append(StatAlert(
+                id: "memory",
+                message: String(format: "Memory pressure at %.0f%%", memoryUsage.pressurePercent)
+            ))
+        }
+        if let cpuTemperature = averageTemperatures[.cpu],
+           cpuTemperature > alertThresholds.cpuTemperatureCelsius {
+            alerts.append(StatAlert(
+                id: "temperature",
+                message: String(format: "CPU temperature at %.0f°", cpuTemperature)
+            ))
+        }
+        if battery.isPresent, !battery.isPluggedIn,
+           battery.levelPercent < alertThresholds.batteryLowPercent {
+            alerts.append(StatAlert(
+                id: "battery",
+                message: String(format: "Battery at %.0f%%", battery.levelPercent)
+            ))
+        }
+
+        // Publish only on change — the menu bar icon redraws on this.
+        if alerts != activeAlerts {
+            activeAlerts = alerts
         }
     }
 }

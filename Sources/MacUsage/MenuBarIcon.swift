@@ -16,21 +16,57 @@ import AppKit
 
 enum MenuBarIcon {
 
-    /// Build the template image for the status item. All geometry is
+    /// Build the image for the status item. All geometry is
     /// proportional to `pointSize`; drawing happens at the screen's
     /// actual scale, so it is crisp on Retina displays.
-    static func make(pointSize: CGFloat = 24) -> NSImage {
+    ///
+    /// `alerting` adds a red exclamation badge. That needs real color,
+    /// so the image stops being a template — the gauge is then drawn
+    /// in white/black matching the menu bar's current appearance
+    /// (checked at draw time, so theme changes stay correct).
+    static func make(pointSize: CGFloat = 24, alerting: Bool = false) -> NSImage {
         let image = NSImage(size: NSSize(width: pointSize, height: pointSize),
                             flipped: false) { _ in
-            drawGlyph(size: pointSize)
+            if alerting {
+                let isDarkMenuBar = NSAppearance.currentDrawing()
+                    .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                drawGlyph(size: pointSize, color: isDarkMenuBar ? .white : .black)
+                drawAlertBadge(size: pointSize)
+            } else {
+                drawGlyph(size: pointSize, color: .black)
+            }
             return true
         }
-        image.isTemplate = true
-        image.accessibilityDescription = "Mac Usage"
+        image.isTemplate = !alerting
+        image.accessibilityDescription = alerting ? "Mac Usage — attention needed" : "Mac Usage"
         return image
     }
 
-    private static func drawGlyph(size: CGFloat) {
+    /// Red circle with a white "!" at the top-right corner.
+    private static func drawAlertBadge(size: CGFloat) {
+        let badgeRadius = size * 0.21
+        let badgeCenter = NSPoint(x: size - badgeRadius, y: size - badgeRadius)
+        let badgeRect = NSRect(
+            x: badgeCenter.x - badgeRadius, y: badgeCenter.y - badgeRadius,
+            width: badgeRadius * 2, height: badgeRadius * 2
+        )
+
+        NSColor.systemRed.setFill()
+        NSBezierPath(ovalIn: badgeRect).fill()
+
+        let mark = "!" as NSString
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: badgeRadius * 1.6, weight: .heavy),
+            .foregroundColor: NSColor.white,
+        ]
+        let markSize = mark.size(withAttributes: attributes)
+        mark.draw(at: NSPoint(
+            x: badgeCenter.x - markSize.width / 2,
+            y: badgeCenter.y - markSize.height / 2
+        ), withAttributes: attributes)
+    }
+
+    private static func drawGlyph(size: CGFloat, color: NSColor) {
         // Proportions were designed at 18×18; scale everything.
         let scale = size / 18
         let center = NSPoint(x: size / 2, y: size / 2)
@@ -55,7 +91,7 @@ enum MenuBarIcon {
                         clockwise: true)
         track.lineWidth = arcStrokeWidth
         track.lineCapStyle = .round
-        NSColor.black.withAlphaComponent(0.35).setStroke()
+        color.withAlphaComponent(0.35).setStroke()
         track.stroke()
 
         // 2. Bright value arc on top of the track.
@@ -65,7 +101,7 @@ enum MenuBarIcon {
                            clockwise: true)
         valueArc.lineWidth = arcStrokeWidth
         valueArc.lineCapStyle = .round
-        NSColor.black.setStroke()
+        color.setStroke()
         valueArc.stroke()
 
         // 3. Needle pointing at the value arc's end.
@@ -79,7 +115,7 @@ enum MenuBarIcon {
         ))
         needle.lineWidth = 1.5 * scale
         needle.lineCapStyle = .round
-        NSColor.black.setStroke()
+        color.setStroke()
         needle.stroke()
 
         // 4. Hub dot over the needle's base.
@@ -88,7 +124,7 @@ enum MenuBarIcon {
             x: center.x - hubRadius, y: center.y - hubRadius,
             width: hubRadius * 2, height: hubRadius * 2
         ))
-        NSColor.black.setFill()
+        color.setFill()
         hub.fill()
     }
 }

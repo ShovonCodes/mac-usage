@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 // ─────────────────────────────────────────────────────────────────
 // App entry point.
@@ -35,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPanel!
     private var hostingView: NSHostingView<AnyView>!
     private var clickOutsideMonitor: Any?
+    private var alertSubscription: AnyCancellable?
 
     /// Gap between the menu bar and the top of the panel.
     private let menuBarGap: CGFloat = 5
@@ -54,6 +56,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: AnyView(StatsPanelView().environmentObject(statsStore))
         )
         panel = FloatingPanel.make(wrapping: hostingView)
+
+        // Swap the icon to the red-badged attention glyph whenever any
+        // threshold alert is firing; the tooltip names the reasons.
+        alertSubscription = statsStore.$activeAlerts
+            .removeDuplicates()
+            .sink { [weak self] alerts in
+                self?.statusItem.button?.image = MenuBarIcon.make(alerting: !alerts.isEmpty)
+                self?.statusItem.button?.toolTip = alerts.isEmpty
+                    ? "Mac Usage"
+                    : "Mac Usage — " + alerts.map(\.message).joined(separator: ", ")
+            }
     }
 
     // MARK: Status item clicks
