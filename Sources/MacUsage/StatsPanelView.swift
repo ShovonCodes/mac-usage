@@ -15,50 +15,67 @@ enum ExpandableSection {
 struct StatsPanelView: View {
     @EnvironmentObject var statsStore: StatsStore
 
-    /// Which card's detail column is currently expanded, if any.
+    /// Which card's detail panel is currently expanded, if any.
     @State private var expandedSection: ExpandableSection?
-    /// Pending "collapse the detail column" action; cancelled whenever
-    /// the pointer re-enters the card or the detail column itself.
+    /// Pending "collapse the detail panel" action; cancelled whenever
+    /// the pointer re-enters the card or the detail panel itself.
     @State private var collapseWorkItem: DispatchWorkItem?
+    /// The NSView hosting this SwiftUI view — how the detail panel
+    /// controller finds the menu bar panel's window to sit beside.
+    @State private var hostView: NSView?
+    @State private var detailPanelController = DetailPanelController()
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            if expandedSection == .memory {
-                MemoryDetailColumn()
-                    .frame(width: 240)
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
-                    .onHover { hover(.memory, isInside: $0) }
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                cpuSection
-                memorySection
-                    .onHover { hover(.memory, isInside: $0) }
-                fansSection
-                temperaturesSection
-                bottomBar
-            }
-            .frame(width: 276)
+        VStack(alignment: .leading, spacing: 10) {
+            cpuSection
+            memorySection
+                .onHover { hover(.memory, isInside: $0) }
+            fansSection
+            temperaturesSection
+            bottomBar
         }
         .padding(12)
+        .frame(width: 300)
+        .background(HostingViewAccessor(view: $hostView))
+        .onChange(of: expandedSection) { section in
+            if section == .memory {
+                detailPanelController.show(
+                    content: memoryDetailContent,
+                    besideWindowContaining: hostView
+                )
+            } else {
+                detailPanelController.hide()
+            }
+        }
         // Tell the store when the panel opens/closes so it can switch
         // between the fast (2s) and idle (15s) refresh intervals.
         .onAppear { statsStore.panelDidOpen() }
-        .onDisappear { statsStore.panelDidClose() }
+        .onDisappear {
+            detailPanelController.hide()
+            expandedSection = nil
+            statsStore.panelDidClose()
+        }
+    }
+
+    private var memoryDetailContent: some View {
+        MemoryDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .onHover { hover(.memory, isInside: $0) }
     }
 
     // MARK: Hover expansion
 
     /// Expands `section` while the pointer is over its card or its
-    /// detail column. Collapsing is slightly delayed so the pointer
-    /// can cross the gap between the two without the column vanishing.
+    /// detail panel. Collapsing is slightly delayed so the pointer
+    /// can cross the gap between the two without the panel vanishing.
     private func hover(_ section: ExpandableSection, isInside: Bool) {
         collapseWorkItem?.cancel()
         if isInside {
-            withAnimation(.easeInOut(duration: 0.15)) { expandedSection = section }
+            expandedSection = section
         } else {
-            let workItem = DispatchWorkItem {
-                withAnimation(.easeInOut(duration: 0.15)) { expandedSection = nil }
-            }
+            let workItem = DispatchWorkItem { expandedSection = nil }
             collapseWorkItem = workItem
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
         }
@@ -220,7 +237,6 @@ struct MemoryDetailColumn: View {
                     }
                 }
             }
-            Spacer(minLength: 0)
         }
     }
 }
