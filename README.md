@@ -64,9 +64,10 @@ installed app keeps running.
 ## Behavior
 
 - Menu bar shows only an icon — all stats live in the click-to-open panel.
-- Hovering the Memory card expands a detail column: an
-  App/Wired/Compressed/Free breakdown plus the five processes using the
-  most RAM (with their app icons). Other cards will get the same
+- Hovering the CPU or Memory card expands a detail panel beside the main
+  one: a color-coded breakdown (user/system/idle, or
+  App/Wired/Compressed/Free) plus the five processes using the most of
+  that resource, with their app icons. Other cards will get the same
   treatment over time.
 - Panel open: stats refresh every **2 seconds**.
 - Panel closed: a light background refresh every **15 seconds** keeps the

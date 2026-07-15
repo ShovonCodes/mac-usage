@@ -25,6 +25,7 @@ final class StatsStore: ObservableObject {
 
     // Latest values the UI displays.
     @Published var cpuUsage = CpuUsageSnapshot()
+    @Published var cpuDetails = CpuDetails()
     @Published var memoryUsage = MemoryUsageSnapshot()
     @Published var memoryDetails = MemoryDetails()
     @Published var fans: [FanReading] = []
@@ -32,6 +33,7 @@ final class StatsStore: ObservableObject {
 
     // The readers that actually collect the data.
     private let cpuReader = CpuUsageReader()
+    private let cpuDetailsReader = CpuDetailsReader()
     private let memoryReader = MemoryUsageReader()
     private let memoryDetailsReader = MemoryDetailsReader()
     private let sensorReader = FanAndTemperatureReader()
@@ -92,6 +94,18 @@ final class StatsStore: ObservableObject {
             await MainActor.run { [weak self] in
                 self?.fans = fans
                 self?.averageTemperatures = temperatures
+            }
+        }
+
+        // CPU process list is one cheap `ps` call — refresh it on every
+        // tick while the panel is open, off the main thread.
+        if isPanelOpen {
+            let cpuDetailsReader = self.cpuDetailsReader
+            Task.detached(priority: .utility) {
+                let details = cpuDetailsReader.readCurrentDetails()
+                await MainActor.run { [weak self] in
+                    self?.cpuDetails = details
+                }
             }
         }
 

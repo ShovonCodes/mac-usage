@@ -25,7 +25,7 @@ final class MemoryDetailsReader {
     // MARK: Top processes
 
     private func readTopProcesses(limit: Int) -> [ProcessMemoryUsage] {
-        let topOutput = Self.run(
+        let topOutput = Subprocess.run(
             "/usr/bin/top",
             ["-l", "1", "-o", "mem", "-n", "\(limit)", "-stats", "pid,mem,command"]
         )
@@ -33,7 +33,7 @@ final class MemoryDetailsReader {
         guard !entries.isEmpty else { return [] }
 
         let pidList = entries.map { String($0.pid) }.joined(separator: ",")
-        let psOutput = Self.run("/bin/ps", ["-o", "pid=,comm=", "-p", pidList])
+        let psOutput = Subprocess.run("/bin/ps", ["-o", "pid=,comm=", "-p", pidList])
         let executablePaths = Self.parseExecutablePaths(psOutput)
 
         return entries.map { entry in
@@ -45,19 +45,6 @@ final class MemoryDetailsReader {
                 memoryBytes: entry.bytes
             )
         }
-    }
-
-    private static func run(_ executable: String, _ arguments: [String]) -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe() // silence; a failure just yields ""
-        do { try process.run() } catch { return "" }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(data: data, encoding: .utf8) ?? ""
     }
 
     // MARK: Parsing (static + pure so it can be tested without spawning)

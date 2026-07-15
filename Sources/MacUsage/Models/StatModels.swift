@@ -14,6 +14,24 @@ struct CpuUsageSnapshot {
     var totalBusyPercent: Double {
         return userPercent + systemPercent
     }
+
+    var idlePercent: Double {
+        return max(0, 100 - totalBusyPercent)
+    }
+}
+
+/// One row of the "top CPU processes" list.
+struct ProcessCpuUsage: Identifiable {
+    let id: Int32              // pid
+    let name: String
+    let executablePath: String // used to look up the app icon
+    let cpuPercent: Double
+}
+
+/// Everything the expanded CPU hover panel displays that isn't
+/// already part of the regular CPU snapshot.
+struct CpuDetails {
+    var topProcesses: [ProcessCpuUsage] = []
 }
 
 /// A snapshot of how much RAM is being used.

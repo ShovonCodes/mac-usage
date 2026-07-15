@@ -9,6 +9,7 @@ import AppKit
 
 /// Stat cards that can expand a detail column when hovered.
 enum ExpandableSection {
+    case cpu
     case memory
 }
 
@@ -24,11 +25,11 @@ struct StatsPanelView: View {
     /// controller finds the menu bar panel's window to sit beside.
     @State private var hostView: NSView?
     @State private var detailPanelController = DetailPanelController()
-    @State private var panelCenterer = PanelCenterer()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             cpuSection
+                .onHover { hover(.cpu, isInside: $0) }
             memorySection
                 .onHover { hover(.memory, isInside: $0) }
             fansSection
@@ -37,26 +38,28 @@ struct StatsPanelView: View {
         }
         .padding(12)
         .frame(width: 300)
-        .background(HostingViewAccessor(view: $hostView) { window in
-            panelCenterer.attach(to: window)
-        })
+        .background(HostingViewAccessor(view: $hostView))
         .onChange(of: expandedSection) { section in
-            if section == .memory {
+            switch section {
+            case .cpu:
+                detailPanelController.show(
+                    content: cpuDetailContent,
+                    besideWindowContaining: hostView
+                )
+            case .memory:
                 detailPanelController.show(
                     content: memoryDetailContent,
                     besideWindowContaining: hostView
                 )
-            } else {
+            case nil:
                 detailPanelController.hide()
             }
         }
-        // Tell the store when the panel opens/closes so it can switch
-        // between the fast (2s) and idle (15s) refresh intervals.
-        .onAppear { statsStore.panelDidOpen() }
-        .onDisappear {
-            detailPanelController.hide()
+        // The hosting view stays alive between panel opens, so
+        // onDisappear never fires — the delegate tells us instead.
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
+            collapseWorkItem?.cancel()
             expandedSection = nil
-            statsStore.panelDidClose()
         }
     }
 
@@ -66,6 +69,14 @@ struct StatsPanelView: View {
             .frame(width: 240)
             .padding(12)
             .onHover { hover(.memory, isInside: $0) }
+    }
+
+    private var cpuDetailContent: some View {
+        CpuDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .onHover { hover(.cpu, isInside: $0) }
     }
 
     // MARK: Hover expansion
@@ -88,21 +99,15 @@ struct StatsPanelView: View {
 
     private var cpuSection: some View {
         StatSectionCard(title: "CPU") {
-            HStack(spacing: 14) {
-                CircularGauge(
-                    percent: statsStore.cpuUsage.totalBusyPercent,
-                    label: "\(Int(statsStore.cpuUsage.totalBusyPercent))%"
+            HStack {
+                Spacer()
+                SegmentedCircularGauge(
+                    segments: cpuGaugeSegments(statsStore.cpuUsage),
+                    label: "\(Int(statsStore.cpuUsage.totalBusyPercent))%",
+                    caption: "CPU",
+                    size: 72
                 )
-                VStack(alignment: .leading, spacing: 4) {
-                    LabeledValueRow(
-                        label: "User",
-                        value: String(format: "%.1f%%", statsStore.cpuUsage.userPercent)
-                    )
-                    LabeledValueRow(
-                        label: "System",
-                        value: String(format: "%.1f%%", statsStore.cpuUsage.systemPercent)
-                    )
-                }
+                Spacer()
             }
         }
     }
@@ -210,6 +215,18 @@ private func formatBytes(_ bytes: UInt64) -> String {
     return formatter.string(fromByteCount: Int64(bytes))
 }
 
+/// The colored arcs for the CPU ring: user + system over the gray
+/// idle track. Same colors as the hover breakdown's dots.
+private let cpuUserColor: Color = .blue
+private let cpuSystemColor: Color = .orange
+
+private func cpuGaugeSegments(_ cpu: CpuUsageSnapshot) -> [GaugeSegment] {
+    [
+        GaugeSegment(color: cpuUserColor, fraction: cpu.userPercent / 100),
+        GaugeSegment(color: cpuSystemColor, fraction: cpu.systemPercent / 100),
+    ]
+}
+
 /// The colored arcs for the memory ring: App / Wired / Compressed,
 /// each as its share of total RAM. Free stays the gray base track.
 private func memoryGaugeSegments(_ memory: MemoryUsageSnapshot) -> [GaugeSegment] {
@@ -243,13 +260,13 @@ struct MemoryDetailColumn: View {
             StatSectionCard(title: "Breakdown") {
                 VStack(alignment: .leading, spacing: 4) {
                     BreakdownRow(color: .blue, label: "App",
-                                 bytes: statsStore.memoryUsage.breakdown.appBytes)
+                                 value: formatBytes(statsStore.memoryUsage.breakdown.appBytes))
                     BreakdownRow(color: .pink, label: "Wired",
-                                 bytes: statsStore.memoryUsage.breakdown.wiredBytes)
+                                 value: formatBytes(statsStore.memoryUsage.breakdown.wiredBytes))
                     BreakdownRow(color: .yellow, label: "Compressed",
-                                 bytes: statsStore.memoryUsage.breakdown.compressedBytes)
+                                 value: formatBytes(statsStore.memoryUsage.breakdown.compressedBytes))
                     BreakdownRow(color: .gray, label: "Free",
-                                 bytes: statsStore.memoryUsage.breakdown.freeBytes)
+                                 value: formatBytes(statsStore.memoryUsage.breakdown.freeBytes))
                 }
             }
             StatSectionCard(title: "Processes") {
@@ -260,7 +277,11 @@ struct MemoryDetailColumn: View {
                 } else {
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(statsStore.memoryDetails.topProcesses) { process in
-                            ProcessMemoryRow(process: process)
+                            ProcessRow(
+                                name: process.name,
+                                executablePath: process.executablePath,
+                                value: formatBytes(process.memoryBytes)
+                            )
                         }
                     }
                 }
@@ -299,10 +320,50 @@ struct MemoryDetailColumn: View {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// CPU hover detail: breakdown + top processes
+// ─────────────────────────────────────────────────────────────────
+
+struct CpuDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            StatSectionCard(title: "Breakdown") {
+                VStack(alignment: .leading, spacing: 4) {
+                    BreakdownRow(color: cpuUserColor, label: "User",
+                                 value: String(format: "%.1f%%", statsStore.cpuUsage.userPercent))
+                    BreakdownRow(color: cpuSystemColor, label: "System",
+                                 value: String(format: "%.1f%%", statsStore.cpuUsage.systemPercent))
+                    BreakdownRow(color: .gray, label: "Idle",
+                                 value: String(format: "%.1f%%", statsStore.cpuUsage.idlePercent))
+                }
+            }
+            StatSectionCard(title: "Processes") {
+                if statsStore.cpuDetails.topProcesses.isEmpty {
+                    Text("Measuring…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(statsStore.cpuDetails.topProcesses) { process in
+                            ProcessRow(
+                                name: process.name,
+                                executablePath: process.executablePath,
+                                value: String(format: "%.1f%%", process.cpuPercent)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct BreakdownRow: View {
     let color: Color
     let label: String
-    let bytes: UInt64
+    let value: String
 
     var body: some View {
         HStack(spacing: 6) {
@@ -313,26 +374,29 @@ private struct BreakdownRow: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Spacer()
-            Text(formatBytes(bytes))
+            Text(value)
                 .font(.callout.monospacedDigit())
         }
     }
 }
 
-private struct ProcessMemoryRow: View {
-    let process: ProcessMemoryUsage
+/// Icon + name + value row shared by the CPU and memory process lists.
+private struct ProcessRow: View {
+    let name: String
+    let executablePath: String
+    let value: String
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(nsImage: Self.icon(forExecutablePath: process.executablePath))
+            Image(nsImage: Self.icon(forExecutablePath: executablePath))
                 .resizable()
                 .frame(width: 16, height: 16)
-            Text(process.name)
+            Text(name)
                 .font(.callout)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer()
-            Text(formatBytes(process.memoryBytes))
+            Text(value)
                 .font(.callout.monospacedDigit())
                 .layoutPriority(1)
         }
@@ -448,33 +512,3 @@ struct SegmentedCircularGauge: View {
     }
 }
 
-/// The circular progress ring used for CPU % and memory %.
-struct CircularGauge: View {
-    let percent: Double   // 0...100
-    let label: String
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 5)
-            Circle()
-                .trim(from: 0, to: min(max(percent / 100, 0), 1))
-                .stroke(
-                    gaugeColor,
-                    style: StrokeStyle(lineWidth: 5, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90)) // start filling from 12 o'clock
-                .animation(.easeInOut(duration: 0.4), value: percent)
-            Text(label)
-                .font(.system(size: 13, weight: .semibold).monospacedDigit())
-        }
-        .frame(width: 52, height: 52)
-    }
-
-    /// Green when relaxed, orange when busy, red when maxed out.
-    private var gaugeColor: Color {
-        if percent < 60 { return .green }
-        if percent < 85 { return .orange }
-        return .red
-    }
-}

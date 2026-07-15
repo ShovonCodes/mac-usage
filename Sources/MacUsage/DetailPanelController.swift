@@ -30,16 +30,6 @@ final class DetailPanelController {
         let hostingView = NSHostingView(rootView: content)
         let size = hostingView.fittingSize
         hostingView.frame = NSRect(origin: .zero, size: size)
-        hostingView.autoresizingMask = [.width, .height]
-
-        // Same frosted-glass look as the main panel.
-        let backgroundView = NSVisualEffectView(frame: hostingView.frame)
-        backgroundView.material = .popover
-        backgroundView.state = .active
-        backgroundView.wantsLayer = true
-        backgroundView.layer?.cornerRadius = 10
-        backgroundView.layer?.masksToBounds = true
-        backgroundView.addSubview(hostingView)
 
         let anchorFrame = anchorWindow.frame
         let visibleFrame = screen.visibleFrame
@@ -54,20 +44,9 @@ final class DetailPanelController {
         // Top-align with the main panel, but never above the visible area.
         let y = min(anchorFrame.maxY, visibleFrame.maxY) - size.height
 
-        let newPanel = NSPanel(
-            contentRect: NSRect(x: x, y: y, width: size.width, height: size.height),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
-        newPanel.isOpaque = false
-        newPanel.backgroundColor = .clear
-        newPanel.hasShadow = true
-        newPanel.level = anchorWindow.level      // float with the menu panel
-        newPanel.collectionBehavior = [.transient, .ignoresCycle]
-        newPanel.isReleasedWhenClosed = false
-        newPanel.contentView = backgroundView
-
+        let newPanel = FloatingPanel.make(wrapping: hostingView)
+        newPanel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height),
+                          display: false)
         newPanel.alphaValue = 0
         newPanel.orderFront(nil)
         NSAnimationContext.runAnimationGroup { context in
@@ -85,93 +64,48 @@ final class DetailPanelController {
 }
 
 /// Grabs the NSView SwiftUI hosts this background in, so the panel
-/// controller can find the menu bar panel's window. Reports the
-/// window as soon as the view lands in one — before first draw.
+/// controller can find the menu bar panel's window.
 struct HostingViewAccessor: NSViewRepresentable {
     @Binding var view: NSView?
-    var onWindowAvailable: ((NSWindow) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSView {
-        let nsView = WindowObservingView()
-        nsView.onWindowAvailable = onWindowAvailable
+        let nsView = NSView()
         DispatchQueue.main.async { self.view = nsView }
         return nsView
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? WindowObservingView)?.onWindowAvailable = onWindowAvailable
-    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-final class WindowObservingView: NSView {
-    var onWindowAvailable: ((NSWindow) -> Void)?
+/// The borderless frosted-glass panel style shared by the main stats
+/// panel and the hover detail panels.
+enum FloatingPanel {
+    @MainActor
+    static func make(wrapping contentView: NSView) -> NSPanel {
+        let frame = contentView.frame
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let window {
-            onWindowAvailable?(window)
-        }
-    }
-}
+        let backgroundView = NSVisualEffectView(frame: frame)
+        backgroundView.material = .popover
+        backgroundView.state = .active
+        backgroundView.wantsLayer = true
+        backgroundView.layer?.cornerRadius = 10
+        backgroundView.layer?.masksToBounds = true
+        contentView.autoresizingMask = [.width, .height]
+        backgroundView.addSubview(contentView)
 
-// ─────────────────────────────────────────────────────────────────
-// Keeps the menu bar panel centered under the status item icon.
-//
-// MenuBarExtra opens its window edge-aligned to the status item and
-// re-places it on every open. Repositioning after the fact flickers,
-// so instead this watches the window's move notifications and
-// re-centers the moment the system places it — same runloop turn,
-// before the misplaced frame reaches the screen.
-// ─────────────────────────────────────────────────────────────────
-
-@MainActor
-final class PanelCenterer {
-
-    private weak var window: NSWindow?
-    private var moveObserver: NSObjectProtocol?
-
-    func attach(to window: NSWindow) {
-        if self.window === window {
-            center()
-            return
-        }
-        if let moveObserver {
-            NotificationCenter.default.removeObserver(moveObserver)
-        }
-        self.window = window
-        center()
-        moveObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didMoveNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.center() }
-        }
-    }
-
-    private func center() {
-        guard let panelWindow = window else { return }
-        // The status item lives in its own tiny window at menu bar
-        // height — the only other window this app owns up there.
-        guard let iconFrame = NSApp.windows.first(where: {
-            $0 !== panelWindow && $0.className.contains("StatusBarWindow")
-        })?.frame else { return }
-        guard let screen = panelWindow.screen ?? NSScreen.main else { return }
-
-        let margin: CGFloat = 8
-        var x = iconFrame.midX - panelWindow.frame.width / 2
-        x = max(screen.visibleFrame.minX + margin,
-                min(x, screen.visibleFrame.maxX - panelWindow.frame.width - margin))
-
-        // Already centered (or this move was our own correction) —
-        // returning here is what stops notification recursion.
-        guard abs(panelWindow.frame.origin.x - x) > 0.5 else { return }
-        panelWindow.setFrameOrigin(NSPoint(x: x, y: panelWindow.frame.origin.y))
-    }
-
-    deinit {
-        if let moveObserver {
-            NotificationCenter.default.removeObserver(moveObserver)
-        }
+        let panel = NSPanel(
+            contentRect: frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.transient, .ignoresCycle]
+        panel.isReleasedWhenClosed = false
+        panel.contentView = backgroundView
+        return panel
     }
 }
