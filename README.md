@@ -75,10 +75,9 @@ installed app keeps running.
   data warm so the panel never opens empty.
 - No Dock icon; the app lives entirely in the menu bar.
 - Gear icon → Settings: show/hide cards, drag rows to reorder them,
-  launch at login, a global hotkey (⌃⌥M) that opens/closes the panel
-  from anywhere, and a "Fetch public IP" switch — the public-IP lookup
-  is the app's only network request, and that switch turns it off
-  entirely.
+  launch at login, and a "Fetch public IP" switch — the public-IP
+  lookup is the app's only network request, and that switch turns it
+  off entirely.
 
 ## How it works
 
@@ -88,7 +87,6 @@ installed app keeps running.
 | `StatsPanelView.swift` | The dropdown panel UI |
 | `StatsStore.swift` | Owns readers + the adaptive refresh timer |
 | `LoginItemManager.swift` | Start-at-login registration (SMAppService) |
-| `HotkeyManager.swift` | The global ⌃⌥M hotkey (Carbon, no permissions) |
 | `Readers/CpuUsageReader.swift` | CPU % from kernel tick counters |
 | `Readers/MemoryUsageReader.swift` | RAM usage from kernel VM statistics |
 | `Readers/MemoryDetailsReader.swift` | Memory breakdown + top processes (for the hover panel) |

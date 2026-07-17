@@ -57,7 +57,6 @@ struct StatsPanelView: View {
     /// app update) are appended in default position — see `cardOrder`.
     @AppStorage("cardOrder") private var cardOrderRaw = ""
 
-    @AppStorage("globalHotkeyEnabled") private var isHotkeyEnabled = false
     @AppStorage("fetchPublicIP") private var fetchesPublicIP = true
     /// Mirrors SMAppService's registration state; refreshed every time
     /// the settings page appears (the system, not us, owns this state).
@@ -181,7 +180,6 @@ struct StatsPanelView: View {
         StatSectionCard(title: "General") {
             VStack(alignment: .leading, spacing: 6) {
                 settingToggle("Launch at login", isOn: launchAtLoginBinding)
-                settingToggle("Global hotkey", detail: "⌃⌥M", isOn: $isHotkeyEnabled)
                 settingToggle("Fetch public IP", isOn: $fetchesPublicIP)
             }
         }
@@ -209,16 +207,10 @@ struct StatsPanelView: View {
         )
     }
 
-    private func settingToggle(_ label: String, detail: String? = nil,
-                               isOn: Binding<Bool>) -> some View {
-        HStack(spacing: 6) {
+    private func settingToggle(_ label: String, isOn: Binding<Bool>) -> some View {
+        HStack {
             Text(label)
                 .font(.callout)
-            if let detail {
-                Text(detail)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
             Spacer()
             SettingSwitch(isOn: isOn)
         }

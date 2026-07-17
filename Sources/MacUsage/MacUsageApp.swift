@@ -35,14 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let panelContentSizeChanged = Notification.Name("MacUsagePanelContentSizeChanged")
 
     private let statsStore = StatsStore()
-    private let hotkeyManager = HotkeyManager()
     private var statusItem: NSStatusItem!
     private var panel: NSPanel!
     private var hostingView: NSHostingView<AnyView>!
     private var clickOutsideMonitor: Any?
     private var alertSubscription: AnyCancellable?
     private var contentSizeSubscription: AnyCancellable?
-    private var defaultsObserver: NSObjectProtocol?
 
     /// Gap between the menu bar and the top of the panel.
     private let menuBarGap: CGFloat = 5
@@ -92,25 +90,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? "Mac Usage"
                     : "Mac Usage — " + alerts.map(\.message).joined(separator: ", ")
             }
-
-        // Global hotkey (⌃⌥M) — registered only while its Settings
-        // switch is on. UserDefaults change notifications keep the
-        // registration in sync with the switch.
-        hotkeyManager.onHotkeyPressed = { [weak self] in
-            Task { @MainActor in self?.togglePanel() }
-        }
-        syncHotkeyRegistration()
-        defaultsObserver = NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.syncHotkeyRegistration() }
-        }
-    }
-
-    private func syncHotkeyRegistration() {
-        hotkeyManager.setEnabled(UserDefaults.standard.bool(forKey: "globalHotkeyEnabled"))
     }
 
     // MARK: Status item clicks
