@@ -817,7 +817,7 @@ struct NetworkDetailColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "Network Details")
-            StatSectionCard(title: "Activity") {
+            StatSectionCard(title: "Activity", titleTrailing: "last 5 min") {
                 NetworkHistoryChart(points: statsStore.networkHistory)
             }
             StatSectionCard(title: "Connection") {
@@ -857,33 +857,42 @@ struct NetworkDetailColumn: View {
 /// downward (blue). Each direction is normalized to its own peak —
 /// download usually dwarfs upload, and a shared scale would flatten
 /// the upload half into invisibility.
+///
+/// The x-axis is real time, not ticks: 60 buckets of 5 seconds — a
+/// fixed five-minute window no matter how often samples arrive (every
+/// 2 s while the panel is open, every 15 s in the background). Buckets
+/// with no sample render as hairline stubs.
 private struct NetworkHistoryChart: View {
     let points: [NetworkHistoryPoint]
 
-    private static let capacity = 60
+    private static let bucketCount = 60
+    private static let bucketSeconds: TimeInterval = 5
     private static let halfHeight: CGFloat = 28
 
     var body: some View {
-        let padded = Self.paddedPoints(points)
-        let peakUpload = max(points.map(\.uploadBytesPerSecond).max() ?? 0, 1)
-        let peakDownload = max(points.map(\.downloadBytesPerSecond).max() ?? 0, 1)
+        let windowStart = Date()
+            .addingTimeInterval(-Double(Self.bucketCount) * Self.bucketSeconds)
+        let recent = points.filter { $0.id >= windowStart }
+        let buckets = Self.bucketed(recent, since: windowStart)
+        let peakUpload = max(recent.map(\.uploadBytesPerSecond).max() ?? 0, 1)
+        let peakDownload = max(recent.map(\.downloadBytesPerSecond).max() ?? 0, 1)
 
         VStack(spacing: 4) {
             VStack(spacing: 1) {
                 HStack(alignment: .bottom, spacing: 1) {
-                    ForEach(Array(padded.enumerated()), id: \.offset) { _, point in
+                    ForEach(Array(buckets.enumerated()), id: \.offset) { _, bucket in
                         Capsule()
                             .fill(networkUploadColor)
-                            .frame(height: barHeight(point?.uploadBytesPerSecond, peak: peakUpload))
+                            .frame(height: barHeight(bucket?.upload, peak: peakUpload))
                             .frame(maxWidth: .infinity, alignment: .bottom)
                     }
                 }
                 .frame(height: Self.halfHeight, alignment: .bottom)
                 HStack(alignment: .top, spacing: 1) {
-                    ForEach(Array(padded.enumerated()), id: \.offset) { _, point in
+                    ForEach(Array(buckets.enumerated()), id: \.offset) { _, bucket in
                         Capsule()
                             .fill(networkDownloadColor)
-                            .frame(height: barHeight(point?.downloadBytesPerSecond, peak: peakDownload))
+                            .frame(height: barHeight(bucket?.download, peak: peakDownload))
                             .frame(maxWidth: .infinity, alignment: .top)
                     }
                 }
@@ -906,10 +915,23 @@ private struct NetworkHistoryChart: View {
         return max(2, Self.halfHeight * value / peak)
     }
 
-    /// Right-align recent samples: pad the left with nils until full.
-    private static func paddedPoints(_ points: [NetworkHistoryPoint]) -> [NetworkHistoryPoint?] {
-        let missing = max(0, capacity - points.count)
-        return Array(repeating: nil, count: missing) + points.suffix(capacity).map { $0 }
+    /// Samples averaged into fixed 5-second slots; empty slots stay nil.
+    private static func bucketed(
+        _ points: [NetworkHistoryPoint], since windowStart: Date
+    ) -> [(upload: Double, download: Double)?] {
+        var slots: [[NetworkHistoryPoint]] = Array(repeating: [], count: bucketCount)
+        for point in points {
+            let offset = point.id.timeIntervalSince(windowStart)
+            guard offset >= 0 else { continue }
+            slots[min(bucketCount - 1, Int(offset / bucketSeconds))].append(point)
+        }
+        return slots.map { samples in
+            guard !samples.isEmpty else { return nil }
+            return (
+                upload: samples.map(\.uploadBytesPerSecond).reduce(0, +) / Double(samples.count),
+                download: samples.map(\.downloadBytesPerSecond).reduce(0, +) / Double(samples.count)
+            )
+        }
     }
 }
 

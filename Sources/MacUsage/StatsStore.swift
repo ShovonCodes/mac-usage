@@ -70,8 +70,12 @@ final class StatsStore: ObservableObject {
     // request — slow cadence is plenty.
     private let networkInfoSampleInterval: TimeInterval = 10
     private var lastNetworkInfoSample = Date.distantPast
-    /// Throughput/usage history for the charts (last 60 ticks).
+    /// CPU usage history for the chart (last 60 ticks).
     private let historyCapacity = 60
+    /// Network samples are timestamped and the chart shows a fixed
+    /// five-minute window — keep enough for that even at the fast
+    /// 2-second cadence (200 × 2 s ≈ 6.7 min).
+    private let networkHistoryCapacity = 200
 
     /// When any stat crosses these, an alert fires.
     private struct AlertThresholds {
@@ -141,8 +145,8 @@ final class StatsStore: ObservableObject {
             uploadBytesPerSecond: networkSpeed.uploadBytesPerSecond,
             downloadBytesPerSecond: networkSpeed.downloadBytesPerSecond
         ))
-        if networkHistory.count > historyCapacity {
-            networkHistory.removeFirst(networkHistory.count - historyCapacity)
+        if networkHistory.count > networkHistoryCapacity {
+            networkHistory.removeFirst(networkHistory.count - networkHistoryCapacity)
         }
 
         // History needs the fresh level; its first call also seeds
