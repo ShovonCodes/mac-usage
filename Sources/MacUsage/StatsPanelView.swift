@@ -969,9 +969,13 @@ struct BatteryDetailColumn: View {
 }
 
 /// One bar per hour, oldest on the left. Bar height = battery level;
-/// hours without any reading render as faint stubs.
+/// hours without any reading render as faint stubs. Hovering a bar
+/// brightens it and swaps the footer for that hour's level — system
+/// tooltips are too slow (and flaky in a non-activating panel).
 private struct BatteryHistoryChart: View {
     let points: [BatteryHistoryPoint]
+
+    @State private var hoveredPoint: BatteryHistoryPoint?
 
     private static let barAreaHeight: CGFloat = 56
 
@@ -979,30 +983,50 @@ private struct BatteryHistoryChart: View {
         VStack(spacing: 4) {
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(points) { point in
-                    if let level = point.levelPercent {
-                        Capsule()
-                            .fill(barColor(level))
-                            .frame(height: max(4, Self.barAreaHeight * level / 100))
-                            .frame(maxWidth: .infinity)
-                            .help(String(format: "%@ — %.0f%%", Self.hourLabel(point.id), level))
-                    } else {
-                        Capsule()
-                            .fill(Color.gray.opacity(0.25))
-                            .frame(height: 4)
-                            .frame(maxWidth: .infinity)
+                    // The clear backdrop stretches each bar's hover
+                    // target to the chart's full height — the visible
+                    // capsule alone is a tiny, fiddly target.
+                    ZStack(alignment: .bottom) {
+                        Color.clear
+                        if let level = point.levelPercent {
+                            Capsule()
+                                .fill(barColor(level))
+                                .frame(height: max(4, Self.barAreaHeight * level / 100))
+                                .brightness(hoveredPoint?.id == point.id ? 0.2 : 0)
+                        } else {
+                            Capsule()
+                                .fill(Color.gray.opacity(hoveredPoint?.id == point.id ? 0.5 : 0.25))
+                                .frame(height: 4)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Self.barAreaHeight)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering {
+                            hoveredPoint = point
+                        } else if hoveredPoint?.id == point.id {
+                            hoveredPoint = nil
+                        }
                     }
                 }
             }
             .frame(height: Self.barAreaHeight, alignment: .bottom)
             HStack {
-                if let first = points.first {
-                    Text(Self.hourLabel(first.id))
+                if let hoveredPoint {
+                    Text(Self.hourLabel(hoveredPoint.id))
+                    Spacer()
+                    Text(hoveredPoint.levelPercent.map { String(format: "%.0f%%", $0) } ?? "no data")
+                } else {
+                    if let first = points.first {
+                        Text(Self.hourLabel(first.id))
+                    }
+                    Spacer()
+                    Text("now")
                 }
-                Spacer()
-                Text("now")
             }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(hoveredPoint == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
         }
     }
 
