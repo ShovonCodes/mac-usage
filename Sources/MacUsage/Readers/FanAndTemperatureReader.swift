@@ -41,7 +41,7 @@ final class FanAndTemperatureReader {
     }
 
     /// Full per-fan detail for the hover panel. "Ac" is the actual
-    /// speed; "Mn"/"Mx"/"Tg" are the SMC's min/max/target speeds.
+    /// speed; "Mn"/"Mx" are the SMC's min/max speeds.
     func readFanDetails() -> [FanDetailReading] {
         smc.open()
         guard smc.isOpen else { return [] }
@@ -57,8 +57,7 @@ final class FanAndTemperatureReader {
                 id: fanIndex,
                 currentRpm: currentRpm,
                 minRpm: smc.readNumericValue(forKey: "F\(fanIndex)Mn") ?? 0,
-                maxRpm: smc.readNumericValue(forKey: "F\(fanIndex)Mx") ?? 0,
-                targetRpm: smc.readNumericValue(forKey: "F\(fanIndex)Tg") ?? 0
+                maxRpm: smc.readNumericValue(forKey: "F\(fanIndex)Mx") ?? 0
             ))
         }
         return details

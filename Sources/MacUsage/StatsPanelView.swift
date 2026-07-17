@@ -67,6 +67,10 @@ struct StatsPanelView: View {
     /// The card row currently being drag-reordered in Settings.
     @State private var draggedCard: ExpandableSection?
     @State private var draggedCardStartIndex = 0
+    @State private var dragTranslation: CGFloat = 0
+    /// The slot the dragged card would land in if released now. State
+    /// (not derived from the translation) so it can carry hysteresis.
+    @State private var dragTargetIndex = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -227,10 +231,11 @@ struct StatsPanelView: View {
     private static let cardRowHeight: CGFloat = 28
 
     /// One row of the Cards list: grip + name (the draggable area) and
-    /// the visibility switch. Dragging vertically reorders the list,
-    /// persisting the order as it changes.
+    /// the visibility switch. While a drag is in flight the rows only
+    /// move visually (offsets); the order is committed on release.
     private func cardSettingRow(_ section: ExpandableSection) -> some View {
-        HStack(spacing: 8) {
+        let offset = rowDragOffset(for: section)
+        return HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal")
                     .font(.caption)
@@ -248,31 +253,72 @@ struct StatsPanelView: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(Color.gray.opacity(draggedCard == section ? 0.2 : 0))
         )
+        .offset(y: offset)
+        // The dragged row rides above the ones it passes.
+        .zIndex(draggedCard == section ? 1 : 0)
+        // Bystander rows slide aside smoothly; the dragged row must
+        // track the pointer raw — animating it would add lag.
+        .animation(draggedCard == section ? nil : .easeInOut(duration: 0.15), value: offset)
     }
 
-    /// Row-step drag: every `cardRowHeight` of vertical travel moves
-    /// the dragged card one slot, animated. A plain mouse-delta gesture
-    /// (not system drag-and-drop) because this panel is a
-    /// non-activating window, where drag sessions are unreliable.
+    /// Visual-only displacement while dragging: the dragged row follows
+    /// the pointer (clamped to the list), and rows between its start
+    /// and target slots step aside by one row height. Nothing here
+    /// touches the stored order — that happens once, on drag end.
+    private func rowDragOffset(for section: ExpandableSection) -> CGFloat {
+        guard let draggedCard, let index = cardOrder.firstIndex(of: section) else { return 0 }
+        let start = draggedCardStartIndex
+        let target = dragTargetIndex
+        if section == draggedCard {
+            let lowest = CGFloat(-start) * Self.cardRowHeight
+            let highest = CGFloat(cardOrder.count - 1 - start) * Self.cardRowHeight
+            return min(max(dragTranslation, lowest), highest)
+        }
+        if start < target, index > start, index <= target { return -Self.cardRowHeight }
+        if target < start, index >= target, index < start { return Self.cardRowHeight }
+        return 0
+    }
+
+    /// A plain mouse-delta gesture (not system drag-and-drop) because
+    /// this panel is a non-activating window, where drag sessions are
+    /// unreliable.
     private func cardDragGesture(for section: ExpandableSection) -> some Gesture {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
                 if draggedCard != section {
                     draggedCard = section
                     draggedCardStartIndex = cardOrder.firstIndex(of: section) ?? 0
+                    dragTargetIndex = draggedCardStartIndex
                 }
+                dragTranslation = value.translation.height
+
+                // Hysteresis: the pointer must travel clearly past a
+                // slot's midpoint (0.65 rows, not 0.5) to adopt it —
+                // otherwise hand jitter right at a boundary makes the
+                // neighboring row oscillate.
+                let rows = dragTranslation / Self.cardRowHeight
+                let proposed = max(0, min(cardOrder.count - 1,
+                                          draggedCardStartIndex + Int(rows.rounded())))
+                let currentRows = CGFloat(dragTargetIndex - draggedCardStartIndex)
+                if proposed != dragTargetIndex, abs(rows - currentRows) > 0.65 {
+                    dragTargetIndex = proposed
+                }
+            }
+            .onEnded { _ in
                 var order = cardOrder
-                guard let currentIndex = order.firstIndex(of: section) else { return }
-                let steps = Int((value.translation.height / Self.cardRowHeight).rounded())
-                let targetIndex = max(0, min(order.count - 1, draggedCardStartIndex + steps))
-                guard targetIndex != currentIndex else { return }
-                order.remove(at: currentIndex)
-                order.insert(section, at: targetIndex)
+                let targetIndex = dragTargetIndex
+                if let currentIndex = order.firstIndex(of: section), targetIndex != currentIndex {
+                    order.remove(at: currentIndex)
+                    order.insert(section, at: targetIndex)
+                }
+                // One commit: offsets reset in the same animation the
+                // reordered rows settle in, so nothing jumps.
                 withAnimation(.easeInOut(duration: 0.15)) {
+                    draggedCard = nil
+                    dragTranslation = 0
                     cardOrderRaw = order.map(\.rawValue).joined(separator: ",")
                 }
             }
-            .onEnded { _ in draggedCard = nil }
     }
 
     private func visibilityBinding(for section: ExpandableSection) -> Binding<Bool> {
@@ -1006,7 +1052,6 @@ struct FanDetailColumn: View {
                             )
                             VStack(alignment: .leading, spacing: 4) {
                                 LabeledValueRow(label: "Min", value: rpmText(fan.minRpm))
-                                LabeledValueRow(label: "Target", value: rpmText(fan.targetRpm))
                                 LabeledValueRow(label: "Max", value: rpmText(fan.maxRpm))
                             }
                         }

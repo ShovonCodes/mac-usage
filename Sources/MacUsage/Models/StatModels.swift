@@ -124,7 +124,6 @@ struct FanDetailReading: Identifiable {
     var currentRpm: Double = 0
     var minRpm: Double = 0
     var maxRpm: Double = 0
-    var targetRpm: Double = 0
 }
 
 /// One temperature sensor grouped into a friendly category.
