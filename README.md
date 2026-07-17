@@ -161,33 +161,11 @@ swift build -c release && .build/release/MacUsage &
 Kill that test copy with `pkill -f '.build/release/MacUsage'` — the
 installed app keeps running.
 
-## How it works
+## Contributing
 
-| File | Job |
-|---|---|
-| `MacUsageApp.swift` | Entry point; puts the app in the menu bar |
-| `StatsPanelView.swift` | The dropdown panel UI |
-| `StatsStore.swift` | Owns readers + the adaptive refresh timer |
-| `DetailPanelController.swift` | The hover detail panel beside the main one |
-| `LoginItemManager.swift` | Start-at-login registration (SMAppService) |
-| `Readers/CpuUsageReader.swift` | CPU % from kernel tick counters |
-| `Readers/MemoryUsageReader.swift` | RAM usage from kernel VM statistics |
-| `Readers/MemoryDetailsReader.swift` | Memory breakdown + top processes (for the hover panel) |
-| `Readers/BatteryReader.swift` | Battery level, time remaining, health, cycles (IOKit) |
-| `Readers/BatteryHistoryReader.swift` | 24h battery level history (power log + live samples) |
-| `Readers/NetworkSpeedReader.swift` | Up/down throughput from kernel interface counters |
-| `Readers/NetworkInfoReader.swift` | Wi-Fi name, local IPs, public IP (cached) |
-| `Readers/SmcConnection.swift` | Low-level channel to the SMC chip (IOKit) |
-| `Readers/FanAndTemperatureReader.swift` | Fan RPM + temp sensors on top of SMC |
-| `Models/StatModels.swift` | Plain data structs the UI renders |
-
-Fan and temperature data come from the SMC (System Management Controller).
-Sensor key names differ across Mac models, so at startup the app scans all
-available SMC keys and keeps the ones that look like CPU/GPU/battery
-temperature sensors — this makes it work on both Intel and Apple Silicon
-without hard-coded sensor lists. Reading the SMC needs no admin rights.
-
-## Adding a new stat (the extension pattern)
+Contributions are welcome — fork, build with `./install.sh`, and raise a
+PR. The codebase follows one simple pattern, so adding a new stat card is
+four small steps:
 
 1. Create a reader in `Sources/MacUsage/Readers/`, e.g. `DiskSpaceReader.swift`,
    with a `readCurrentUsage()`-style method returning a model struct.
@@ -198,6 +176,8 @@ without hard-coded sensor lists. Reading the SMC needs no admin rights.
 
 Good next candidates: disk usage & I/O, Bluetooth device batteries, power
 draw, per-core CPU.
+
+If Mac Usage is useful to you, a ⭐ on the repo helps others find it.
 
 ## License
 
