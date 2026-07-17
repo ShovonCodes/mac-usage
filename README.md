@@ -12,6 +12,7 @@ CPU · Memory · Battery · Network · Temperature · Fans
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
 ![Zero dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
 ![No Xcode project](https://img.shields.io/badge/build-SwiftPM%20only-lightgrey)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 <img src="Assets/screenshots/overview.png" width="400" alt="The Mac Usage panel: CPU history chart, memory pressure and usage rings, battery level and health rings, network speeds, temperatures, and fan RPM">
 
@@ -197,3 +198,7 @@ without hard-coded sensor lists. Reading the SMC needs no admin rights.
 
 Good next candidates: disk usage & I/O, Bluetooth device batteries, power
 draw, per-core CPU.
+
+## License
+
+[MIT](LICENSE)
