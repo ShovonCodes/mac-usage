@@ -11,7 +11,8 @@ import CoreWLAN
 //
 // Public IP: one HTTPS request to api.ipify.org, cached for 10
 // minutes, and only ever made while the panel is open. This is the
-// app's only network request.
+// app's only network request — and the "Fetch public IP" switch in
+// Settings turns it off entirely.
 // ─────────────────────────────────────────────────────────────────
 
 final class NetworkInfoReader {
@@ -29,7 +30,14 @@ final class NetworkInfoReader {
         }
 
         (info.localIPv4, info.localIPv6) = Self.localAddresses()
-        info.publicIP = publicIP()
+        if UserDefaults.standard.object(forKey: "fetchPublicIP") as? Bool ?? true {
+            info.publicIP = publicIP()
+        } else {
+            // Privacy switch is off: never fetch, and drop what was
+            // cached so re-enabling starts fresh.
+            cachedPublicIP = nil
+            publicIPFetchedAt = .distantPast
+        }
         return info
     }
 

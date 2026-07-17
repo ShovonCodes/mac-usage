@@ -127,20 +127,21 @@ if [ "$WANT_LOGIN_ITEM" = "ask" ]; then
   fi
 fi
 
+# Older versions registered an AppleScript (System Events) login item;
+# the app now registers itself with SMAppService instead. Drop any
+# legacy item so the app doesn't start twice at login.
+osascript -e "tell application \"System Events\" to delete login item \"$APP_NAME\"" >/dev/null 2>&1 || true
+
 if [ "$WANT_LOGIN_ITEM" = "yes" ]; then
-  if osascript >/dev/null 2>&1 <<OSA
-tell application "System Events"
-    if exists login item "$APP_NAME" then delete login item "$APP_NAME"
-    make login item at end with properties {path:"$APP_PATH", hidden:false, name:"$APP_NAME"}
-end tell
-OSA
-  then
-    echo "✓ Registered as a login item (remove any time in System Settings → General → Login Items)."
+  # Only the app can register its own bundle with SMAppService, so ask
+  # it to: the flag applies the change and exits immediately.
+  if "$APP_PATH/Contents/MacOS/$APP_NAME" --set-login on >/dev/null 2>&1; then
+    echo "✓ Registered as a login item (System Settings → General → Login Items)."
   else
-    echo "! Could not add the login item automatically (macOS blocked the automation request)."
-    echo "  Add it manually: System Settings → General → Login Items → \"+\" → $APP_PATH"
+    echo "! Could not register the login item automatically."
+    echo "  Enable it in the app instead: gauge icon → gear → Launch at login."
   fi
 else
-  echo "  Skipped start-at-login. Enable it any time:"
-  echo "  System Settings → General → Login Items → \"+\" → $APP_PATH"
+  echo "  Skipped start-at-login. Enable it any time in the app:"
+  echo "  gauge icon → gear → Launch at login."
 fi

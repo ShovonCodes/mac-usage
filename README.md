@@ -25,7 +25,8 @@ A gauge icon appears in the menu bar; click it to open the stats panel.
 Quit from the panel's Quit button.
 
 The installer asks whether the app should start automatically at login —
-press Enter for yes, or answer `n`.
+press Enter for yes, or answer `n`. You can change your mind any time in
+the app: gear icon → "Launch at login".
 
 After installing:
 
@@ -73,6 +74,11 @@ installed app keeps running.
 - Panel closed: a light background refresh every **15 seconds** keeps the
   data warm so the panel never opens empty.
 - No Dock icon; the app lives entirely in the menu bar.
+- Gear icon → Settings: show/hide cards, drag rows to reorder them,
+  launch at login, a global hotkey (⌃⌥M) that opens/closes the panel
+  from anywhere, and a "Fetch public IP" switch — the public-IP lookup
+  is the app's only network request, and that switch turns it off
+  entirely.
 
 ## How it works
 
@@ -81,6 +87,8 @@ installed app keeps running.
 | `MacUsageApp.swift` | Entry point; puts the app in the menu bar |
 | `StatsPanelView.swift` | The dropdown panel UI |
 | `StatsStore.swift` | Owns readers + the adaptive refresh timer |
+| `LoginItemManager.swift` | Start-at-login registration (SMAppService) |
+| `HotkeyManager.swift` | The global ⌃⌥M hotkey (Carbon, no permissions) |
 | `Readers/CpuUsageReader.swift` | CPU % from kernel tick counters |
 | `Readers/MemoryUsageReader.swift` | RAM usage from kernel VM statistics |
 | `Readers/MemoryDetailsReader.swift` | Memory breakdown + top processes (for the hover panel) |

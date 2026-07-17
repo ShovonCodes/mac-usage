@@ -17,6 +17,14 @@ BUNDLE_ID="com.macusage.app"
 echo "▸ Quitting $APP_NAME..."
 pkill -x "$APP_NAME" 2>/dev/null
 
+# Deregister start-at-login while the app bundle still exists —
+# SMAppService registrations can only be flipped by the app itself.
+for APP in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"; do
+  if [ -x "$APP/Contents/MacOS/$APP_NAME" ]; then
+    "$APP/Contents/MacOS/$APP_NAME" --set-login off >/dev/null 2>&1
+  fi
+done
+
 REMOVED=0
 for APP in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"; do
   if [ -d "$APP" ]; then
@@ -27,8 +35,9 @@ for APP in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"; do
 done
 [ "$REMOVED" = "0" ] && echo "  (no installed copy found)"
 
-# Login item — best effort; macOS may ask permission to control
-# System Events the first time. Silent no-op if never registered.
+# Legacy login item (versions before SMAppService used System Events).
+# Best effort; macOS may ask permission to control System Events the
+# first time. Silent no-op if never registered.
 if osascript -e "tell application \"System Events\" to delete login item \"$APP_NAME\"" >/dev/null 2>&1; then
   echo "✓ Removed the login item"
 fi

@@ -8,13 +8,28 @@ import AppKit
 // ─────────────────────────────────────────────────────────────────
 
 /// Stat cards that can expand a detail column when hovered.
-enum ExpandableSection {
+/// Raw values are what the persisted card-order string stores, and
+/// the case order here is the default card order on a fresh install.
+enum ExpandableSection: String, CaseIterable, Identifiable {
     case cpu
     case memory
     case battery
     case network
-    case fans
     case temperature
+    case fans
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .cpu: return "CPU"
+        case .memory: return "Memory"
+        case .battery: return "Battery"
+        case .network: return "Network"
+        case .temperature: return "Temperature"
+        case .fans: return "Fans"
+        }
+    }
 }
 
 
@@ -37,7 +52,21 @@ struct StatsPanelView: View {
     @AppStorage("showTemperatureCard") private var showsTemperatureCard = true
     @AppStorage("showFansCard") private var showsFansCard = true
 
+    /// Card order, stored as comma-separated raw values
+    /// ("cpu,memory,..."). Cards missing from the string (added in an
+    /// app update) are appended in default position — see `cardOrder`.
+    @AppStorage("cardOrder") private var cardOrderRaw = ""
+
+    @AppStorage("globalHotkeyEnabled") private var isHotkeyEnabled = false
+    @AppStorage("fetchPublicIP") private var fetchesPublicIP = true
+    /// Mirrors SMAppService's registration state; refreshed every time
+    /// the settings page appears (the system, not us, owns this state).
+    @State private var launchesAtLogin = false
+
     @State private var isShowingSettings = false
+    /// The card row currently being drag-reordered in Settings.
+    @State private var draggedCard: ExpandableSection?
+    @State private var draggedCardStartIndex = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -83,31 +112,48 @@ struct StatsPanelView: View {
         if !statsStore.activeAlerts.isEmpty {
             alertBanner
         }
-        if showsCpuCard {
-            cpuSection
-                .onHover { if $0 { expandedSection = .cpu } }
-        }
-        if showsMemoryCard {
-            memorySection
-                .onHover { if $0 { expandedSection = .memory } }
-        }
-        if showsBatteryCard, statsStore.battery.isPresent {
-            batterySection
-                .onHover { if $0 { expandedSection = .battery } }
-        }
-        if showsNetworkCard {
-            networkSection
-                .onHover { if $0 { expandedSection = .network } }
-        }
-        if showsTemperatureCard {
-            temperaturesSection
-                .onHover { if $0 { expandedSection = .temperature } }
-        }
-        if showsFansCard {
-            fansSection
-                .onHover { if $0 { expandedSection = .fans } }
+        ForEach(cardOrder) { section in
+            if isCardVisible(section) {
+                card(for: section)
+                    .onHover { if $0 { expandedSection = section } }
+            }
         }
         bottomBar
+    }
+
+    /// The user's card order. Unknown entries are dropped and missing
+    /// cards appended, so the result always covers every card exactly
+    /// once no matter what the stored string says.
+    private var cardOrder: [ExpandableSection] {
+        var order = cardOrderRaw.split(separator: ",")
+            .compactMap { ExpandableSection(rawValue: String($0)) }
+        var seen = Set<ExpandableSection>()
+        order = order.filter { seen.insert($0).inserted }
+        order.append(contentsOf: ExpandableSection.allCases.filter { !seen.contains($0) })
+        return order
+    }
+
+    private func isCardVisible(_ section: ExpandableSection) -> Bool {
+        switch section {
+        case .cpu: return showsCpuCard
+        case .memory: return showsMemoryCard
+        case .battery: return showsBatteryCard && statsStore.battery.isPresent
+        case .network: return showsNetworkCard
+        case .temperature: return showsTemperatureCard
+        case .fans: return showsFansCard
+        }
+    }
+
+    @ViewBuilder
+    private func card(for section: ExpandableSection) -> some View {
+        switch section {
+        case .cpu: cpuSection
+        case .memory: memorySection
+        case .battery: batterySection
+        case .network: networkSection
+        case .temperature: temperaturesSection
+        case .fans: fansSection
+        }
     }
 
     // MARK: Settings
@@ -128,24 +174,115 @@ struct StatsPanelView: View {
                 .foregroundStyle(.secondary)
             Spacer()
         }
-        StatSectionCard(title: "Show Cards") {
+        StatSectionCard(title: "General") {
             VStack(alignment: .leading, spacing: 6) {
-                settingToggle("CPU", isOn: $showsCpuCard)
-                settingToggle("Memory", isOn: $showsMemoryCard)
-                settingToggle("Battery", isOn: $showsBatteryCard)
-                settingToggle("Network", isOn: $showsNetworkCard)
-                settingToggle("Temperature", isOn: $showsTemperatureCard)
-                settingToggle("Fans", isOn: $showsFansCard)
+                settingToggle("Launch at login", isOn: launchAtLoginBinding)
+                settingToggle("Global hotkey", detail: "⌃⌥M", isOn: $isHotkeyEnabled)
+                settingToggle("Fetch public IP", isOn: $fetchesPublicIP)
+            }
+        }
+        .onAppear { launchesAtLogin = LoginItemManager.isEnabled }
+        StatSectionCard(title: "Cards", titleTrailing: "drag to reorder") {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(cardOrder) { section in
+                    cardSettingRow(section)
+                }
             }
         }
     }
 
-    private func settingToggle(_ label: String, isOn: Binding<Bool>) -> some View {
-        HStack {
+    /// Talks to SMAppService immediately on toggle; the switch only
+    /// moves if macOS accepted the change (it refuses when the binary
+    /// runs outside an app bundle during development).
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchesAtLogin },
+            set: { enabled in
+                if LoginItemManager.setEnabled(enabled) {
+                    launchesAtLogin = enabled
+                }
+            }
+        )
+    }
+
+    private func settingToggle(_ label: String, detail: String? = nil,
+                               isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 6) {
             Text(label)
                 .font(.callout)
+            if let detail {
+                Text(detail)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
             SettingSwitch(isOn: isOn)
+        }
+    }
+
+    // MARK: Card reordering
+
+    /// Fixed row height so the drag gesture can translate a vertical
+    /// distance directly into "how many rows did I move".
+    private static let cardRowHeight: CGFloat = 28
+
+    /// One row of the Cards list: grip + name (the draggable area) and
+    /// the visibility switch. Dragging vertically reorders the list,
+    /// persisting the order as it changes.
+    private func cardSettingRow(_ section: ExpandableSection) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Text(section.displayName)
+                    .font(.callout)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+            .gesture(cardDragGesture(for: section))
+            SettingSwitch(isOn: visibilityBinding(for: section))
+        }
+        .frame(height: Self.cardRowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.gray.opacity(draggedCard == section ? 0.2 : 0))
+        )
+    }
+
+    /// Row-step drag: every `cardRowHeight` of vertical travel moves
+    /// the dragged card one slot, animated. A plain mouse-delta gesture
+    /// (not system drag-and-drop) because this panel is a
+    /// non-activating window, where drag sessions are unreliable.
+    private func cardDragGesture(for section: ExpandableSection) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                if draggedCard != section {
+                    draggedCard = section
+                    draggedCardStartIndex = cardOrder.firstIndex(of: section) ?? 0
+                }
+                var order = cardOrder
+                guard let currentIndex = order.firstIndex(of: section) else { return }
+                let steps = Int((value.translation.height / Self.cardRowHeight).rounded())
+                let targetIndex = max(0, min(order.count - 1, draggedCardStartIndex + steps))
+                guard targetIndex != currentIndex else { return }
+                order.remove(at: currentIndex)
+                order.insert(section, at: targetIndex)
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    cardOrderRaw = order.map(\.rawValue).joined(separator: ",")
+                }
+            }
+            .onEnded { _ in draggedCard = nil }
+    }
+
+    private func visibilityBinding(for section: ExpandableSection) -> Binding<Bool> {
+        switch section {
+        case .cpu: return $showsCpuCard
+        case .memory: return $showsMemoryCard
+        case .battery: return $showsBatteryCard
+        case .network: return $showsNetworkCard
+        case .temperature: return $showsTemperatureCard
+        case .fans: return $showsFansCard
         }
     }
 
@@ -627,6 +764,10 @@ struct DetailColumnHeader: View {
 struct NetworkDetailColumn: View {
     @EnvironmentObject var statsStore: StatsStore
 
+    /// Mirrors the Settings privacy switch: when off, no lookup ever
+    /// runs, so the row would only show "…" — hide it instead.
+    @AppStorage("fetchPublicIP") private var fetchesPublicIP = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "Network Details")
@@ -639,10 +780,12 @@ struct NetworkDetailColumn: View {
                         label: "Wi-Fi",
                         value: statsStore.networkDetails.info.wifiName ?? "—"
                     )
-                    LabeledValueRow(
-                        label: "Public IP",
-                        value: statsStore.networkDetails.info.publicIP ?? "…"
-                    )
+                    if fetchesPublicIP {
+                        LabeledValueRow(
+                            label: "Public IP",
+                            value: statsStore.networkDetails.info.publicIP ?? "…"
+                        )
+                    }
                     ForEach(statsStore.networkDetails.info.localIPv4, id: \.self) { address in
                         LabeledValueRow(label: "IP", value: address)
                     }
