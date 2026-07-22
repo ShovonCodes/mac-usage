@@ -494,7 +494,9 @@ struct StatsPanelView: View {
                         color: .pink,
                         fraction: statsStore.battery.healthPercent / 100
                     )],
-                    label: "\(Int(statsStore.battery.healthPercent))%",
+                    // %.0f rounds like the detail row does — Int()
+                    // truncation made the two disagree (93 vs 94).
+                    label: String(format: "%.0f%%", statsStore.battery.healthPercent),
                     caption: "HEALTH",
                     size: 72
                 )

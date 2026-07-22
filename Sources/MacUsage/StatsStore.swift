@@ -151,12 +151,15 @@ final class StatsStore: ObservableObject {
 
         // History needs the fresh level; its first call also seeds
         // 24h of readings from the power log (~2s), so keep it off
-        // the main thread.
+        // the main thread. The same task refreshes the powerd health
+        // number (system_profiler, ~0.2s) — a no-op except hourly.
         if battery.isPresent {
+            let batteryReader = self.batteryReader
             let batteryHistoryReader = self.batteryHistoryReader
             let level = battery.levelPercent
             let isOnBattery = !battery.isPluggedIn
             Task.detached(priority: .utility) {
+                batteryReader.refreshHealthFromPowerdIfStale()
                 let result = batteryHistoryReader.recordAndBucket(
                     levelPercent: level,
                     isOnBattery: isOnBattery

@@ -43,6 +43,7 @@ The panel never becomes the "active" window, so AppKit/SwiftUI behave unusually.
 - Memory pressure = 100 − sysctl `kern.memorystatus_level`. Memory breakdown "App" = internal − purgeable.
 - SMC (fans + temperatures) via `SmcConnection`, no root needed; sensor keys are discovered by scanning at startup, not hard-coded (differs per Mac model). Fan keys: `F#Ac/Mn/Mx`.
 - Battery history seeds 24 h from `pmset -g log` on first read (~2 s, kept off-main); live samples merge in hourly buckets.
+- Battery health: System Settings' "Maximum Capacity" is powerd's model output, published in **no** public API — every registry ratio reads several points higher (Nominal/Design, Raw/Design). Read it via `system_profiler SPPowerDataType -json` (~0.2 s, cached hourly in `BatteryReader`); registry ratio is only the pre-first-fetch fallback.
 - Network speed from `NET_RT_IFLIST2` 64-bit interface counters, skipping virtual interfaces (`lo/utun/awdl/llw/gif/stf/bridge/ap`).
 - Wi-Fi SSID: CoreWLAN returns nil without location permission → falls back to parsing `ipconfig getsummary`.
 - The public-IP lookup (api.ipify.org, 10-min cache, panel-open only) is **the app's only network request** and is disabled by the `fetchPublicIP` default. Keep it that way — README promises it.
