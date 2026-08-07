@@ -36,7 +36,7 @@ Data flows one way: **Readers → StatsStore → SwiftUI views**.
 ### Non-activating window consequences (recurring trap)
 
 The panel never becomes the "active" window, so AppKit/SwiftUI behave unusually. Known consequences:
-- `.help()` tooltips are slow/flaky → charts implement custom hover (e.g. battery history).
+- `.help()` tooltips are slow/flaky → charts implement custom hover: battery history and both `TrendChart`s. The pattern is a `Color.clear` backdrop per bar so the hit target is the chart's full height (the visible bar is a tiny target, and an empty bucket would have none), plus clearing hover on `panelWillHide` since these views never get `onDisappear`.
 - It cannot take keyboard focus at all, so a text field in the panel is inert. This is why Settings is a real window (`SettingsWindow.swift`) rather than a page inside the panel.
 - Two former workarounds are **gone**, and should not come back: a hand-drawn `SettingSwitch` (system switches rendered gray) and a raw `DragGesture` card reorder (system drag sessions were unreliable). Both existed only because Settings lived in the panel; in a normal window `Toggle` and `List.onMove` work. Anything new that needs a real control belongs in the Settings window, not the panel.
 

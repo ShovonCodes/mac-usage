@@ -104,6 +104,12 @@ enum MenuBarStrip {
     /// Chip body plus a pin's width on each side.
     private static let meterWidth: CGFloat = 12
     private static let pinLength: CGFloat = 1.5
+    private static let thermometerWidth: CGFloat = 7
+    /// The span the thermometer's mercury maps onto. Below 30 C a Mac
+    /// is essentially cold and above 95 it is throttling, so anchoring
+    /// the scale there uses the whole glyph for the range that
+    /// actually varies.
+    private static let thermometerRange: ClosedRange<Double> = 30...95
     private static let meterHeight: CGFloat = 12
     /// Space between the glyph and the first segment, and between
     /// segments. Wider than the gap inside a segment so the readouts
@@ -256,8 +262,10 @@ enum MenuBarStrip {
         case .temperature:
             guard let celsius = readout.cpuTemperatureCelsius else { return nil }
             let text = "\(Int(celsius.rounded()))°"
-            return Part(width: width(of: text)) { x, color in
-                draw(text, at: x, color: color)
+            let textWidth = width(of: text)
+            return Part(width: thermometerWidth + innerGap + textWidth) { x, color in
+                drawThermometer(celsius, at: x, color: color)
+                draw(text, at: x + thermometerWidth + innerGap, color: color)
             }
         }
     }
@@ -357,6 +365,55 @@ enum MenuBarStrip {
         NSBezierPath(rect: NSRect(x: well.minX, y: well.minY,
                                   width: well.width,
                                   height: well.height * fraction)).fill()
+    }
+
+    /// A thermometer whose mercury rises with the reading.
+    ///
+    /// CPU has its sparkline and memory its chip, so temperature was
+    /// the one readout arriving as a bare number. Network needs no
+    /// glyph: its arrows already say which direction is which.
+    private static func drawThermometer(_ celsius: Double,
+                                        at x: CGFloat,
+                                        color: NSColor) {
+        let bulbRadius: CGFloat = 2.6
+        let stemWidth: CGFloat = 2.6
+        let bottom = (glyphSize - meterHeight) / 2
+        let centerX = x + thermometerWidth / 2
+        let bulbCenter = NSPoint(x: centerX, y: bottom + bulbRadius)
+        let stemTop = bottom + meterHeight
+        let stemBottom = bulbCenter.y
+
+        // Outline: stem capsule plus bulb, drawn faint so the mercury
+        // inside it is what carries the reading.
+        color.withAlphaComponent(0.4).setStroke()
+        let stem = NSBezierPath(roundedRect: NSRect(
+            x: centerX - stemWidth / 2, y: stemBottom,
+            width: stemWidth, height: stemTop - stemBottom
+        ), xRadius: stemWidth / 2, yRadius: stemWidth / 2)
+        stem.lineWidth = 1
+        stem.stroke()
+
+        let bulb = NSBezierPath(ovalIn: NSRect(
+            x: bulbCenter.x - bulbRadius, y: bulbCenter.y - bulbRadius,
+            width: bulbRadius * 2, height: bulbRadius * 2
+        ))
+        bulb.lineWidth = 1
+        bulb.stroke()
+
+        // The bulb is always full: a thermometer with an empty bulb
+        // reads as broken rather than as cold.
+        color.setFill()
+        bulb.fill()
+
+        let span = thermometerRange.upperBound - thermometerRange.lowerBound
+        let fraction = min(max((celsius - thermometerRange.lowerBound) / span, 0), 1)
+        guard fraction > 0 else { return }
+        let mercuryWidth = stemWidth - 1.6
+        let mercuryHeight = (stemTop - stemBottom) * fraction
+        NSBezierPath(roundedRect: NSRect(
+            x: centerX - mercuryWidth / 2, y: stemBottom,
+            width: mercuryWidth, height: mercuryHeight
+        ), xRadius: mercuryWidth / 2, yRadius: mercuryWidth / 2).fill()
     }
 
     // MARK: Formatting

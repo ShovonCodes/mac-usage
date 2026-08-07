@@ -1427,7 +1427,15 @@ struct TrendChart: View {
     /// which is where the crowding came from.
     private static let slotCount = 32
 
+    /// Which bucket the pointer is over. Same approach as the battery
+    /// history chart: this panel is a non-activating window where
+    /// `.help()` tooltips are slow and unreliable, so hovering is
+    /// handled directly and the footer doubles as the readout.
+    @State private var hoveredIndex: Int?
+
     var body: some View {
+        let windowStart = Date().addingTimeInterval(-hours * 3600)
+        let slotSeconds = hours * 3600 / Double(Self.slotCount)
         let slots = TimeBuckets.slots(
             points, timestamp: \.date,
             window: hours * 3600, slotCount: Self.slotCount, now: Date()
@@ -1442,34 +1450,75 @@ struct TrendChart: View {
 
         VStack(alignment: .leading, spacing: 4) {
             if present.isEmpty {
-                Text("Collecting. The first day builds up as the app runs.")
+                Text("Collecting. The first hours build up as the app runs.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(height: Self.chartHeight, alignment: .center)
             } else {
                 HStack(alignment: .bottom, spacing: 2) {
                     ForEach(0..<Self.slotCount, id: \.self) { index in
-                        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                            .fill(averages[index].map(color) ?? Color.clear)
-                            .frame(height: barHeight(averages[index], in: range))
-                            .frame(maxWidth: .infinity, alignment: .bottom)
+                        // The clear backdrop stretches each bar's hover
+                        // target to the chart's full height. The visible
+                        // bar alone is a tiny, fiddly target, and an
+                        // empty bucket would have none at all.
+                        ZStack(alignment: .bottom) {
+                            Color.clear
+                            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                                .fill(averages[index].map(color) ?? Color.clear)
+                                .frame(height: barHeight(averages[index], in: range))
+                                .brightness(hoveredIndex == index ? 0.2 : 0)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Self.chartHeight)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            if hovering {
+                                hoveredIndex = index
+                            } else if hoveredIndex == index {
+                                hoveredIndex = nil
+                            }
+                        }
                     }
                 }
                 .frame(height: Self.chartHeight, alignment: .bottom)
 
                 HStack {
-                    Text("\(Int(hours)) h ago")
-                    Spacer()
-                    if let peak = present.max() {
-                        Text("peak \(format(peak))")
+                    if let hoveredIndex {
+                        let start = windowStart.addingTimeInterval(
+                            Double(hoveredIndex) * slotSeconds
+                        )
+                        Text(Self.timeLabel(start))
+                        Spacer()
+                        Text(averages[hoveredIndex].map(format) ?? "no data")
+                    } else {
+                        Text("\(Int(hours)) h ago")
+                        Spacer()
+                        if let peak = present.max() {
+                            Text("peak \(format(peak))")
+                        }
+                        Spacer()
+                        Text("now")
                     }
-                    Spacer()
-                    Text("now")
                 }
-                .font(.system(size: 8))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 8).monospacedDigit())
+                .foregroundStyle(hoveredIndex == nil ? AnyShapeStyle(.tertiary)
+                                                     : AnyShapeStyle(.secondary))
             }
         }
+        // Views in this panel never receive onDisappear, so clear the
+        // hover when the panel closes or it would reopen stuck.
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
+            hoveredIndex = nil
+        }
+    }
+
+    /// Bucket start, as "14:30". The bucket is 15 minutes wide, so its
+    /// start is the honest label: naming it by the midpoint would
+    /// claim more precision than the average behind it has.
+    private static func timeLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     private func bounds(for values: [Double]) -> ClosedRange<Double> {
