@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 // ─────────────────────────────────────────────────────────────────
 // The single place that owns all readers and the refresh timer.
@@ -67,12 +68,24 @@ final class StatsStore: ObservableObject {
     // the fast lane at 2s while the panel is closed, without dragging
     // the SMC along with it.
     private let fastIntervalWhenPanelOpen: TimeInterval = 2
+    /// With the strip on, the menu bar is showing these numbers even
+    /// when the panel is shut, so the fast lane keeps its pace.
+    private let fastIntervalWhenStripVisible: TimeInterval = 2
     private let fastIntervalWhenIdle: TimeInterval = 15
     private let slowIntervalWhenPanelOpen: TimeInterval = 2
     private let slowIntervalWhenIdle: TimeInterval = 15
     private var fastTimer: Timer?
     private var slowTimer: Timer?
     private var isPanelOpen = false
+    private var isStripVisible = MenuBarSettings.isStripEnabled
+    private var defaultsSubscription: AnyCancellable?
+
+    /// Bumped at the end of every fast tick. The AppDelegate watches
+    /// this to redraw the menu bar strip: subscribing to the
+    /// individual @Published values instead would fire several times
+    /// per tick, and would depend on which one happens to be assigned
+    /// last inside refreshFastStats.
+    @Published private(set) var menuBarTick: UInt64 = 0
 
     // The process list samples with `top`, which costs ~0.5s of CPU
     // per run — too heavy for every 2s tick, so it gets its own pace.
@@ -111,6 +124,23 @@ final class StatsStore: ObservableObject {
         refreshFastStats()
         refreshSlowStats()
         restartTimers()
+
+        // Toggling the strip changes how often the fast lane has to
+        // run, so the timers follow the setting.
+        defaultsSubscription = NotificationCenter.default
+            .publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.applyStripVisibilityChange() }
+            }
+    }
+
+    /// UserDefaults posts on any change, so restart only when the one
+    /// setting that affects timing actually flipped.
+    private func applyStripVisibilityChange() {
+        let isVisible = MenuBarSettings.isStripEnabled
+        guard isVisible != isStripVisible else { return }
+        isStripVisible = isVisible
+        restartTimers()
     }
 
     // MARK: Panel open/close — called by the view
@@ -130,10 +160,15 @@ final class StatsStore: ObservableObject {
 
     // MARK: Refreshing
 
+    private var fastInterval: TimeInterval {
+        if isPanelOpen { return fastIntervalWhenPanelOpen }
+        return isStripVisible ? fastIntervalWhenStripVisible : fastIntervalWhenIdle
+    }
+
     private func restartTimers() {
         fastTimer?.invalidate()
         fastTimer = Timer.scheduledTimer(
-            withTimeInterval: isPanelOpen ? fastIntervalWhenPanelOpen : fastIntervalWhenIdle,
+            withTimeInterval: fastInterval,
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor in self?.refreshFastStats() }
@@ -175,6 +210,7 @@ final class StatsStore: ObservableObject {
         }
 
         evaluateAlerts()
+        menuBarTick &+= 1
     }
 
     /// The slow lane: anything touching the SMC, a subprocess, or the

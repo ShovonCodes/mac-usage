@@ -35,10 +35,11 @@ final class SettingsWindowController {
     /// fire for clicks landing in our own windows.
     static let openRequested = Notification.Name("MacUsageOpenSettingsRequested")
 
-    /// Both panes are built to want the same height, so the window
-    /// never resizes between tabs and neither pane inherits the
-    /// other's empty space.
-    private static let contentSize = NSSize(width: 460, height: 316)
+    /// Sized to the tallest pane (Menu Bar), so no pane inherits
+    /// another's empty space and none of them clip. The window is
+    /// resizable as a safety valve: a pane that grows past this is
+    /// recoverable by dragging rather than stuck.
+    private static let contentSize = NSSize(width: 460, height: 384)
 
     /// Kept alive between opens so reopening restores the same window
     /// and its selected tab rather than building a new one.
@@ -56,7 +57,7 @@ final class SettingsWindowController {
 
         let newWindow = SettingsPanelWindow(
             contentRect: NSRect(origin: .zero, size: Self.contentSize),
-            styleMask: [.titled, .closable],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -98,6 +99,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+            MenuBarSettingsView()
+                .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
             CardsSettingsView()
                 .tabItem { Label("Cards", systemImage: "rectangle.stack") }
         }
@@ -173,6 +176,54 @@ private struct SettingRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.vertical, 2)
+        }
+    }
+}
+
+// MARK: Menu Bar
+
+private struct MenuBarSettingsView: View {
+    @AppStorage(MenuBarSettings.stripEnabledKey) private var showsStrip = true
+    @AppStorage("menuBarShowCpu") private var showsCpu = true
+    @AppStorage("menuBarShowMemory") private var showsMemory = true
+    @AppStorage("menuBarShowNetwork") private var showsNetwork = true
+    @AppStorage("menuBarShowTemperature") private var showsTemperature = false
+
+    var body: some View {
+        Form {
+            Section {
+                SettingRow(
+                    title: "Show readings in the menu bar",
+                    detail: "Live numbers next to the gauge icon. With this off, "
+                          + "the menu bar shows the icon alone and every reading "
+                          + "lives in the panel.",
+                    isOn: $showsStrip
+                )
+            }
+            Section {
+                ForEach(MenuBarSegment.allCases) { segment in
+                    Toggle(segment.displayName, isOn: binding(for: segment))
+                }
+                .disabled(!showsStrip)
+            } header: {
+                Text("Readings")
+            } footer: {
+                Text("Each reading takes menu bar width, so turning one off "
+                     + "gives that space back. Battery is not offered: macOS "
+                     + "already shows it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func binding(for segment: MenuBarSegment) -> Binding<Bool> {
+        switch segment {
+        case .cpu: return $showsCpu
+        case .memory: return $showsMemory
+        case .network: return $showsNetwork
+        case .temperature: return $showsTemperature
         }
     }
 }

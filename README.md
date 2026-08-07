@@ -44,6 +44,10 @@ Hover any card for the full story.
 - **🚨 Threshold alerts**: the menu bar icon grows a red badge when CPU
   passes 90%, memory pressure 80%, CPU temperature 90°, or battery drops
   below 10% while discharging; the panel explains why.
+- **📟 Menu bar readouts**: a live CPU graph, memory percentage and
+  network rates sit next to the icon, so the common checks need no
+  click at all. Each one can be switched off to give the width back,
+  or the whole strip can be, leaving just the icon.
 - **⚙️ Settings**: hide cards you don't care about, drag to reorder
   them, start at login, and a privacy switch for the public-IP lookup.
 
@@ -137,11 +141,15 @@ entirely. No analytics, no update pings, nothing else.
 
 ## Behavior
 
-- Menu bar shows only an icon. All stats live in the click-to-open panel.
+- The menu bar shows the icon plus whichever readouts you leave on.
 - Hovering a card expands a detail panel beside the main one.
 - Panel open: stats refresh every **2 seconds**.
-- Panel closed: a light background refresh every **15 seconds** keeps the
-  data warm so the panel never opens empty.
+- Panel closed: the menu bar readouts keep refreshing every **2 seconds**,
+  since they are on screen. Everything behind them (sensors, fan speeds,
+  process lists) drops to **15 seconds**. Switch the menu bar readouts off
+  and that first group drops to 15 seconds too.
+- The menu bar readouts are three kernel calls per refresh, no
+  subprocesses, which is why they can stay live this cheaply.
 - No Dock icon; the app lives entirely in the menu bar.
 - No admin rights needed for anything, including SMC fan/temperature
   reads.

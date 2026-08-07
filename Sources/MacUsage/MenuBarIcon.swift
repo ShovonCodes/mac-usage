@@ -43,7 +43,7 @@ enum MenuBarIcon {
     }
 
     /// Red circle with a white "!" at the top-right corner.
-    private static func drawAlertBadge(size: CGFloat) {
+    static func drawAlertBadge(size: CGFloat) {
         let badgeRadius = size * 0.21
         let badgeCenter = NSPoint(x: size - badgeRadius, y: size - badgeRadius)
         let badgeRect = NSRect(
@@ -66,7 +66,7 @@ enum MenuBarIcon {
         ), withAttributes: attributes)
     }
 
-    private static func drawGlyph(size: CGFloat, color: NSColor) {
+    static func drawGlyph(size: CGFloat, color: NSColor) {
         // Proportions were designed at 18×18; scale everything.
         let scale = size / 18
         let center = NSPoint(x: size / 2, y: size / 2)

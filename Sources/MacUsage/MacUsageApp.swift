@@ -44,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var alertSubscription: AnyCancellable?
     private var contentSizeSubscription: AnyCancellable?
     private var openSettingsSubscription: AnyCancellable?
+    private var menuBarSubscription: AnyCancellable?
+    private var defaultsSubscription: AnyCancellable?
     private let settingsWindowController = SettingsWindowController()
 
     /// Gap between the menu bar and the top of the panel.
@@ -63,9 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide the Dock icon — this app lives only in the menu bar.
         NSApp.setActivationPolicy(.accessory)
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = MenuBarIcon.make()
+        // Variable, not square: the strip's width depends on which
+        // segments are switched on, so turning one off gives the room
+        // back to the menu bar.
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.toolTip = "Mac Usage"
+        refreshStatusItem()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -98,16 +103,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-        // Swap the icon to the red-badged attention glyph whenever any
-        // threshold alert is firing; the tooltip names the reasons.
+        // Redraw the strip once per fast tick. One signal rather than
+        // one per published value, so a tick redraws exactly once.
+        menuBarSubscription = statsStore.$menuBarTick
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.refreshStatusItem() }
+            }
+
+        // Reflect the alert state immediately (the badge) and explain
+        // it in the tooltip.
         alertSubscription = statsStore.$activeAlerts
             .removeDuplicates()
             .sink { [weak self] alerts in
-                self?.statusItem.button?.image = MenuBarIcon.make(alerting: !alerts.isEmpty)
-                self?.statusItem.button?.toolTip = alerts.isEmpty
-                    ? "Mac Usage"
-                    : "Mac Usage — " + alerts.map(\.message).joined(separator: ", ")
+                Task { @MainActor in
+                    self?.refreshStatusItem()
+                    self?.statusItem.button?.toolTip = alerts.isEmpty
+                        ? "Mac Usage"
+                        : "Mac Usage: " + alerts.map(\.message).joined(separator: ", ")
+                }
             }
+
+        // Segment toggles take effect on the next redraw rather than
+        // the next tick, which at 15s idle would feel broken.
+        defaultsSubscription = NotificationCenter.default
+            .publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.refreshStatusItem() }
+            }
+    }
+
+    /// Rebuild the status item image from the store's current values.
+    private func refreshStatusItem() {
+        let readout = MenuBarReadout(
+            cpuBusyPercent: statsStore.cpuUsage.totalBusyPercent,
+            cpuHistory: statsStore.cpuHistory.map { $0.userPercent + $0.systemPercent },
+            memoryUsedPercent: statsStore.memoryUsage.usedPercent,
+            uploadBytesPerSecond: statsStore.networkSpeed.uploadBytesPerSecond,
+            downloadBytesPerSecond: statsStore.networkSpeed.downloadBytesPerSecond,
+            cpuTemperatureCelsius: statsStore.averageTemperatures[.cpu]
+        )
+        statusItem.button?.image = MenuBarStrip.make(
+            readout: readout,
+            segments: MenuBarSettings.visibleSegments,
+            alerting: !statsStore.activeAlerts.isEmpty
+        )
     }
 
     // MARK: Status item clicks
