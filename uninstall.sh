@@ -17,7 +17,7 @@ BUNDLE_ID="com.macusage.app"
 echo "▸ Quitting $APP_NAME..."
 pkill -x "$APP_NAME" 2>/dev/null
 
-# Deregister start-at-login while the app bundle still exists —
+# Deregister start-at-login while the app bundle still exists,
 # SMAppService registrations can only be flipped by the app itself.
 for APP in "/Applications/$APP_NAME.app" "$HOME/Applications/$APP_NAME.app"; do
   if [ -x "$APP/Contents/MacOS/$APP_NAME" ]; then

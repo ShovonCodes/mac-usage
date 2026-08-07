@@ -12,7 +12,7 @@
 #   4. Relaunches the app.
 #   5. Optionally registers it as a login item so it survives reboots.
 #
-# Safe to re-run any time — it replaces the installed copy in place.
+# Safe to re-run any time. It replaces the installed copy in place.
 # ─────────────────────────────────────────────────────────────────
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -26,11 +26,11 @@ WANT_LOGIN_ITEM="ask"
 [ "${1:-}" = "--login" ] && WANT_LOGIN_ITEM="yes"
 
 # 1. Toolchain check ───────────────────────────────────────────────
-# `command -v swift` can't detect missing tools — macOS ships stub
+# `command -v swift` can't detect missing tools, because macOS ships stub
 # binaries that exist even before the CLT are installed.
 if ! xcode-select -p >/dev/null 2>&1; then
   echo "MacUsage needs the Xcode Command Line Tools (free; includes Swift)."
-  echo "macOS will show an install dialog now — click Install, wait for it to"
+  echo "macOS will show an install dialog now. Click Install, wait for it to"
   echo "finish, then run this script again."
   xcode-select --install >/dev/null 2>&1 || true
   exit 1
@@ -105,7 +105,7 @@ ditto "$STAGE" "$APP_PATH"
 
 # 5. Launch ────────────────────────────────────────────────────────
 open "$APP_PATH"
-echo "✓ Installed and launched — look for the gauge icon in the menu bar."
+echo "✓ Installed and launched. Look for the gauge icon in the menu bar."
 echo "  (Spotlight can now find it: ⌘Space → \"$DISPLAY_NAME\")"
 
 # 6. Login item (optional) ─────────────────────────────────────────
@@ -122,7 +122,7 @@ if [ "$WANT_LOGIN_ITEM" = "ask" ]; then
       *)     WANT_LOGIN_ITEM="yes" ;;
     esac
   else
-    # No terminal attached (CI, scripted install) — default to no.
+    # No terminal attached (CI, scripted install), so default to no.
     WANT_LOGIN_ITEM="no"
   fi
 fi

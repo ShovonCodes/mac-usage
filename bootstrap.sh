@@ -1,6 +1,6 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────
-# One-line installer/updater for MacUsage — no manual clone needed.
+# One-line installer/updater for MacUsage. No manual clone needed.
 #
 #   curl -fsSL https://raw.githubusercontent.com/ShovonCodes/mac-usage/main/bootstrap.sh | bash
 #
@@ -16,11 +16,11 @@ set -euo pipefail
 
 REPO_URL="${MACUSAGE_REPO:-https://github.com/ShovonCodes/mac-usage.git}"
 
-# Note: `command -v git` can't detect missing tools — macOS ships
+# Note: `command -v git` can't detect missing tools, because macOS ships
 # stub binaries that exist even before the CLT are installed.
 if ! xcode-select -p >/dev/null 2>&1; then
   echo "MacUsage needs the Xcode Command Line Tools (free; includes git and Swift)."
-  echo "macOS will show an install dialog now — click Install, wait for it to"
+  echo "macOS will show an install dialog now. Click Install, wait for it to"
   echo "finish, then run this command again."
   xcode-select --install >/dev/null 2>&1 || true
   exit 1
