@@ -332,7 +332,7 @@ struct StatsPanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.red)
                     Text(alert.message)
                         .font(.caption.weight(.medium))
                 }
@@ -342,7 +342,7 @@ struct StatsPanelView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.red.opacity(0.15))
+                .fill(Theme.red.opacity(Theme.tintAlpha))
         )
     }
 
@@ -491,7 +491,7 @@ struct StatsPanelView: View {
                 Spacer()
                 SegmentedCircularGauge(
                     segments: [GaugeSegment(
-                        color: .pink,
+                        color: Theme.pink,
                         fraction: statsStore.battery.healthPercent / 100
                     )],
                     // %.0f rounds like the detail row does — Int()
@@ -514,17 +514,13 @@ struct StatsPanelView: View {
                 VStack(spacing: 2) {
                     Text(speedText(statsStore.networkSpeed.uploadBytesPerSecond))
                         .font(.system(size: 16, weight: .semibold).monospacedDigit())
-                    Text("↑ Upload")
-                        .font(.caption2)
-                        .foregroundStyle(networkUploadColor)
+                    DirectionLabel(color: networkUploadColor, text: "↑ Upload")
                 }
                 Spacer()
                 VStack(spacing: 2) {
                     Text(speedText(statsStore.networkSpeed.downloadBytesPerSecond))
                         .font(.system(size: 16, weight: .semibold).monospacedDigit())
-                    Text("↓ Download")
-                        .font(.caption2)
-                        .foregroundStyle(networkDownloadColor)
+                    DirectionLabel(color: networkDownloadColor, text: "↓ Download")
                 }
                 Spacer()
             }
@@ -619,8 +615,8 @@ private func formatBytes(_ bytes: UInt64) -> String {
 
 /// User/system accent colors, shared by the CPU chart, its legend,
 /// and the hover breakdown's dots.
-private let cpuUserColor: Color = .blue
-private let cpuSystemColor: Color = .pink
+private let cpuUserColor: Color = Theme.blue
+private let cpuSystemColor: Color = Theme.pink
 
 /// Stacked bar history: user (blue) below, system (pink) above, on a
 /// fixed 0–100% scale. One bar per refresh tick, newest on the right.
@@ -663,23 +659,46 @@ private func memoryGaugeSegments(_ memory: MemoryUsageSnapshot) -> [GaugeSegment
     let totalBytes = Double(memory.totalBytes)
     guard totalBytes > 0 else { return [] }
     return [
-        GaugeSegment(color: .blue, fraction: Double(memory.breakdown.appBytes) / totalBytes),
-        GaugeSegment(color: .pink, fraction: Double(memory.breakdown.wiredBytes) / totalBytes),
-        GaugeSegment(color: .yellow, fraction: Double(memory.breakdown.compressedBytes) / totalBytes),
+        GaugeSegment(color: Theme.blue, fraction: Double(memory.breakdown.appBytes) / totalBytes),
+        GaugeSegment(color: Theme.pink, fraction: Double(memory.breakdown.wiredBytes) / totalBytes),
+        GaugeSegment(color: Theme.yellow, fraction: Double(memory.breakdown.compressedBytes) / totalBytes),
     ]
 }
 
 /// Green when relaxed, orange when strained, red when critical —
 /// same thresholds the plain gauges use.
 private func pressureColor(_ percent: Double) -> Color {
-    if percent < 50 { return .green }
-    if percent < 80 { return .orange }
-    return .red
+    if percent < 50 { return Theme.green }
+    if percent < 80 { return Theme.orange }
+    return Theme.red
 }
 
 /// Upload/download accent colors (match the iStat-style chart).
-private let networkUploadColor: Color = .pink
-private let networkDownloadColor: Color = .blue
+private let networkUploadColor: Color = Theme.pink
+private let networkDownloadColor: Color = Theme.blue
+
+/// "● ↑ Upload" under a network speed.
+///
+/// The label used to be drawn *in* its direction's color, but at
+/// caption2 size on a translucent panel that measured 2.7:1. Same
+/// shape as the CPU chart's legend now: the hue moves into a dot,
+/// which only has to clear the 3:1 bar for a graphical mark, and the
+/// words fall back to `.secondary`.
+private struct DirectionLabel: View {
+    let color: Color
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
 
 /// "33.8 MB/s"-style throughput formatting.
 private func speedText(_ bytesPerSecond: Double) -> String {
@@ -690,10 +709,10 @@ private func speedText(_ bytesPerSecond: Double) -> String {
 
 /// Blue while charging, then green/orange/red as the level drops.
 private func batteryLevelColor(_ battery: BatterySnapshot) -> Color {
-    if battery.isCharging { return .blue }
-    if battery.levelPercent > 50 { return .green }
-    if battery.levelPercent > 20 { return .orange }
-    return .red
+    if battery.isCharging { return Theme.blue }
+    if battery.levelPercent > 50 { return Theme.green }
+    if battery.levelPercent > 20 { return Theme.orange }
+    return Theme.red
 }
 
 /// "2:22"-style time remaining (to empty, or to full while charging).
@@ -728,11 +747,11 @@ struct MemoryDetailColumn: View {
             DetailColumnHeader(title: "Memory Details")
             StatSectionCard(title: "Breakdown") {
                 VStack(alignment: .leading, spacing: 4) {
-                    BreakdownRow(color: .blue, label: "App",
+                    BreakdownRow(color: Theme.blue, label: "App",
                                  value: formatBytes(statsStore.memoryUsage.breakdown.appBytes))
-                    BreakdownRow(color: .pink, label: "Wired",
+                    BreakdownRow(color: Theme.pink, label: "Wired",
                                  value: formatBytes(statsStore.memoryUsage.breakdown.wiredBytes))
-                    BreakdownRow(color: .yellow, label: "Compressed",
+                    BreakdownRow(color: Theme.yellow, label: "Compressed",
                                  value: formatBytes(statsStore.memoryUsage.breakdown.compressedBytes))
                     BreakdownRow(color: .gray, label: "Free",
                                  value: formatBytes(statsStore.memoryUsage.breakdown.freeBytes))
@@ -1047,9 +1066,9 @@ private struct BatteryHistoryChart: View {
     }
 
     private func barColor(_ level: Double) -> Color {
-        if level > 50 { return .green }
-        if level > 20 { return .orange }
-        return .red
+        if level > 50 { return Theme.green }
+        if level > 20 { return Theme.orange }
+        return Theme.red
     }
 
     private static func hourLabel(_ date: Date) -> String {
@@ -1114,9 +1133,9 @@ private func fanSpeedFraction(_ fan: FanDetailReading) -> Double {
 
 private func fanColor(_ fan: FanDetailReading) -> Color {
     let fraction = fanSpeedFraction(fan)
-    if fraction < 0.6 { return .green }
-    if fraction < 0.85 { return .orange }
-    return .red
+    if fraction < 0.6 { return Theme.green }
+    if fraction < 0.85 { return Theme.orange }
+    return Theme.red
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1221,18 +1240,25 @@ private struct TemperatureCategoryCard: View {
     }
 }
 
+/// One cell of the sensor heat grid.
+///
+/// The heat hue used to be on the digits *and* the tint behind them,
+/// which meant reading dark red text on a red wash - 1.66:1 for the
+/// hottest sensors, the worst contrast anywhere in the app. Now the
+/// tint alone carries the heat and the number is plain `.primary`
+/// (5.4:1+). The grid reads better from a distance too: a filled
+/// swatch is a far bigger color signal than three thin glyphs.
 private struct TemperatureChip: View {
     let celsius: Double
 
     var body: some View {
         Text(String(format: "%.0f°", celsius))
             .font(.caption.monospacedDigit().weight(.medium))
-            .foregroundStyle(temperatureColor(celsius))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(temperatureColor(celsius).opacity(0.18))
+                    .fill(temperatureColor(celsius).opacity(Theme.tintAlpha))
             )
     }
 }
@@ -1240,11 +1266,11 @@ private struct TemperatureChip: View {
 /// Cool → hot color scale shared by all heat chips.
 private func temperatureColor(_ celsius: Double) -> Color {
     switch celsius {
-    case ..<35: return .teal
-    case ..<50: return .green
-    case ..<65: return .yellow
-    case ..<80: return .orange
-    default:    return .red
+    case ..<35: return Theme.teal
+    case ..<50: return Theme.green
+    case ..<65: return Theme.yellow
+    case ..<80: return Theme.orange
+    default:    return Theme.red
     }
 }
 
@@ -1362,7 +1388,7 @@ struct StatSectionCard<Content: View>: View {
             HStack {
                 Text(title.uppercased())
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Theme.sectionTitle)
                 Spacer()
                 if let titleTrailing {
                     Text(titleTrailing)
@@ -1376,7 +1402,7 @@ struct StatSectionCard<Content: View>: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.gray.opacity(0.12))
+                .fill(Theme.cardSurface)
         )
     }
 }
