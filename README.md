@@ -6,7 +6,7 @@
 
 **A minimal, extendable macOS menu bar system monitor, inspired by iStat Menus.**
 
-CPU · Memory · Battery · Network · Temperature · Fans
+CPU · Memory · Battery · Network · Disk · Temperature · Fans
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
@@ -26,8 +26,9 @@ Hover any card for the full story.
 ## Highlights
 
 - **📊 CPU**: stacked user/system history chart with the current load and
-  CPU temperature in the corner. Hover: usage breakdown + the five
-  hungriest processes.
+  CPU temperature in the corner. Hover: every logical core as its own
+  bar, grouped into performance and efficiency clusters on Apple
+  Silicon, plus the usage breakdown and the five hungriest processes.
 - **🧠 Memory**: pressure and usage rings, iStat-style. Hover:
   App/Wired/Compressed/Free breakdown and a top-processes list that
   matches Activity Monitor's numbers (it uses the same footprint metric).
@@ -36,6 +37,9 @@ Hover any card for the full story.
   max capacity, and cycle count.
 - **🌐 Network**: live upload/download. Hover: a five-minute activity
   chart with per-direction peaks, Wi-Fi name, local and public IPs.
+- **💽 Disk**: how full the boot volume is, with live read and write
+  rates. Hover: used/free/total and a throughput chart. Mounted disk
+  images are excluded, so opening a .dmg does not read as disk activity.
 - **🌡️ Temperature**: every SMC sensor on your machine, grouped and
   color-coded from cool teal to alarming red; toggle raw sensor names on
   when you want the hardware's identity.

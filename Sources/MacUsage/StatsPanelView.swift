@@ -15,6 +15,7 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
     case memory
     case battery
     case network
+    case disk
     case temperature
     case fans
 
@@ -26,6 +27,7 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
         case .memory: return "Memory"
         case .battery: return "Battery"
         case .network: return "Network"
+        case .disk: return "Disk"
         case .temperature: return "Temperature"
         case .fans: return "Fans"
         }
@@ -45,6 +47,7 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
         case .memory: return "memorychip"
         case .battery: return "battery.100percent"
         case .network: return "network"
+        case .disk: return "internaldrive"
         case .temperature: return "thermometer.medium"
         case .fans: return if #available(macOS 14, *) { "fan" } else { "wind" }
         }
@@ -88,6 +91,7 @@ struct StatsPanelView: View {
     @AppStorage("showMemoryCard") private var showsMemoryCard = true
     @AppStorage("showBatteryCard") private var showsBatteryCard = true
     @AppStorage("showNetworkCard") private var showsNetworkCard = true
+    @AppStorage("showDiskCard") private var showsDiskCard = true
     @AppStorage("showTemperatureCard") private var showsTemperatureCard = true
     @AppStorage("showFansCard") private var showsFansCard = true
 
@@ -155,6 +159,7 @@ struct StatsPanelView: View {
         case .memory: return showsMemoryCard
         case .battery: return showsBatteryCard && statsStore.battery.isPresent
         case .network: return showsNetworkCard
+        case .disk: return showsDiskCard
         case .temperature: return showsTemperatureCard
         case .fans: return showsFansCard
         }
@@ -167,6 +172,7 @@ struct StatsPanelView: View {
         case .memory: memorySection
         case .battery: batterySection
         case .network: networkSection
+        case .disk: diskSection
         case .temperature: temperaturesSection
         case .fans: fansSection
         }
@@ -209,6 +215,9 @@ struct StatsPanelView: View {
         case .network:
             detailPanelController.show(content: networkDetailContent,
                                        besideWindowContaining: hostView)
+        case .disk:
+            detailPanelController.show(content: diskDetailContent,
+                                       besideWindowContaining: hostView)
         case .fans:
             detailPanelController.show(content: fanDetailContent,
                                        besideWindowContaining: hostView)
@@ -245,6 +254,13 @@ struct StatsPanelView: View {
             .frame(width: 240)
             .padding(12)
             .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
+    }
+
+    private var diskDetailContent: some View {
+        DiskDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
     }
 
     private var fanDetailContent: some View {
@@ -374,6 +390,36 @@ struct StatsPanelView: View {
                 Spacer()
             }
         }
+    }
+
+    // MARK: Disk
+
+    private var diskSection: some View {
+        StatSectionCard(title: "Disk", titleTrailing: diskTitleTrailing) {
+            VStack(spacing: 8) {
+                CapacityBar(usedFraction: statsStore.disk.usedPercent / 100)
+                HStack(spacing: 4) {
+                    Circle().fill(diskReadColor).frame(width: 6, height: 6)
+                    Text("Read")
+                    Text(speedText(statsStore.disk.readBytesPerSecond))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Circle().fill(diskWriteColor).frame(width: 6, height: 6)
+                    Text("Write")
+                    Text(speedText(statsStore.disk.writeBytesPerSecond))
+                        .foregroundStyle(.primary)
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// "35% · 24 GB free", mirroring the CPU card's trailing summary.
+    private var diskTitleTrailing: String {
+        let disk = statsStore.disk
+        guard disk.totalBytes > 0 else { return "" }
+        return "\(Int(disk.usedPercent))% · \(formatBytes(disk.freeBytes)) free"
     }
 
     // MARK: Fans
@@ -523,6 +569,11 @@ private func pressureColor(_ percent: Double) -> Color {
     if percent < 80 { return Theme.orange }
     return Theme.red
 }
+
+/// Read/write accent colors. Read shares the blue that already means
+/// "incoming" on the network card; write shares its pink.
+private let diskReadColor: Color = Theme.blue
+private let diskWriteColor: Color = Theme.pink
 
 /// Upload/download accent colors (match the iStat-style chart).
 private let networkUploadColor: Color = Theme.pink
@@ -1107,9 +1158,16 @@ private func temperatureColor(_ celsius: Double) -> Color {
 struct CpuDetailColumn: View {
     @EnvironmentObject var statsStore: StatsStore
 
+    @AppStorage("showsPerCoreUsage") private var showsPerCoreUsage = true
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "CPU Details")
+            if showsPerCoreUsage, !statsStore.cpuUsage.cores.isEmpty {
+                StatSectionCard(title: "Cores") {
+                    CoreUsageGrid(cores: statsStore.cpuUsage.cores)
+                }
+            }
             StatSectionCard(title: "Breakdown") {
                 VStack(alignment: .leading, spacing: 4) {
                     BreakdownRow(color: cpuUserColor, label: "User",
@@ -1139,6 +1197,83 @@ struct CpuDetailColumn: View {
             }
         }
     }
+}
+
+/// One bar per logical core, grouped by cluster on Apple Silicon.
+///
+/// The grouping is the point: four pegged efficiency cores is a
+/// machine ticking over, four pegged performance cores is a machine
+/// working hard, and the aggregate percentage cannot tell those
+/// apart. Intel Macs report no clusters, so they get one ungrouped
+/// list instead of a fake heading.
+private struct CoreUsageGrid: View {
+    let cores: [CoreUsage]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(clusters, id: \.name) { cluster in
+                VStack(alignment: .leading, spacing: 3) {
+                    if let name = cluster.name {
+                        Text(name.uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    ForEach(cluster.cores) { core in
+                        CoreUsageRow(core: core)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Cores in kernel order, split where the cluster name changes.
+    /// Keeping kernel order matters: it is what the indices mean.
+    private var clusters: [(name: String?, cores: [CoreUsage])] {
+        var result: [(name: String?, cores: [CoreUsage])] = []
+        for core in cores {
+            if let last = result.last, last.name == core.clusterName {
+                result[result.count - 1].cores.append(core)
+            } else {
+                result.append((name: core.clusterName, cores: [core]))
+            }
+        }
+        return result
+    }
+}
+
+private struct CoreUsageRow: View {
+    let core: CoreUsage
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("\(core.id)")
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.tertiary)
+                .frame(width: 10, alignment: .trailing)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color(nsColor: .separatorColor))
+                    Capsule()
+                        .fill(coreColor(core.busyPercent))
+                        .frame(width: proxy.size.width * min(max(core.busyPercent, 0), 100) / 100)
+                }
+            }
+            .frame(height: 6)
+            Text(String(format: "%.0f%%", core.busyPercent))
+                .font(.system(size: 9).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 26, alignment: .trailing)
+        }
+    }
+}
+
+/// Same thresholds as the other load gauges, so a busy core reads the
+/// same as a busy anything else.
+private func coreColor(_ percent: Double) -> Color {
+    if percent < 50 { return Theme.green }
+    if percent < 85 { return Theme.orange }
+    return Theme.red
 }
 
 private struct BreakdownRow: View {
@@ -1194,6 +1329,114 @@ private struct ProcessRow: View {
             return NSWorkspace.shared.icon(forFile: String(path[..<appRange.lowerBound]) + ".app")
         }
         return NSWorkspace.shared.icon(forFile: path)
+    }
+}
+
+/// A horizontal capacity bar: how full the boot volume is. The panel
+/// uses rings where a value is a rate or a pressure; capacity is a
+/// length, so it reads better as a bar you can compare against its
+/// own track.
+struct CapacityBar: View {
+    let usedFraction: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color(nsColor: .separatorColor))
+                Capsule()
+                    .fill(capacityColor(usedFraction))
+                    .frame(width: proxy.size.width * min(max(usedFraction, 0), 1))
+            }
+        }
+        .frame(height: 8)
+    }
+}
+
+/// Green until the volume is uncomfortably full. The thresholds are
+/// higher than the CPU/memory ones: a disk at 70% is fine, where
+/// sustained 70% memory pressure is not.
+private func capacityColor(_ fraction: Double) -> Color {
+    if fraction < 0.75 { return Theme.green }
+    if fraction < 0.90 { return Theme.orange }
+    return Theme.red
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Disk hover detail: capacity figures + throughput history
+// ─────────────────────────────────────────────────────────────────
+
+struct DiskDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "Disk Details")
+            StatSectionCard(title: "Capacity") {
+                VStack(alignment: .leading, spacing: 6) {
+                    CapacityBar(usedFraction: statsStore.disk.usedPercent / 100)
+                    VStack(alignment: .leading, spacing: 4) {
+                        LabeledValueRow(label: "Used",
+                                        value: formatBytes(statsStore.disk.usedBytes))
+                        LabeledValueRow(label: "Free",
+                                        value: formatBytes(statsStore.disk.freeBytes))
+                        LabeledValueRow(label: "Total",
+                                        value: formatBytes(statsStore.disk.totalBytes))
+                    }
+                }
+            }
+            StatSectionCard(title: "Activity") {
+                VStack(alignment: .leading, spacing: 6) {
+                    DiskActivityChart(points: statsStore.diskHistory)
+                    BreakdownRow(color: diskReadColor, label: "Read",
+                                 value: speedText(statsStore.disk.readBytesPerSecond))
+                    BreakdownRow(color: diskWriteColor, label: "Write",
+                                 value: speedText(statsStore.disk.writeBytesPerSecond))
+                }
+            }
+        }
+    }
+}
+
+/// Mirrored bars: reads above the centre line, writes below, scaled
+/// to whichever direction peaked. Same shape as the network chart so
+/// the two read alike.
+private struct DiskActivityChart: View {
+    let points: [DiskHistoryPoint]
+
+    private static let halfHeight: CGFloat = 22
+
+    var body: some View {
+        let peak = max(
+            points.map(\.readBytesPerSecond).max() ?? 0,
+            points.map(\.writeBytesPerSecond).max() ?? 0,
+            1
+        )
+        VStack(spacing: 1) {
+            HStack(alignment: .bottom, spacing: 1) {
+                ForEach(points) { point in
+                    Capsule()
+                        .fill(diskReadColor)
+                        .frame(height: barHeight(point.readBytesPerSecond, peak: peak))
+                        .frame(maxWidth: .infinity, alignment: .bottom)
+                }
+            }
+            .frame(height: Self.halfHeight, alignment: .bottom)
+            HStack(alignment: .top, spacing: 1) {
+                ForEach(points) { point in
+                    Capsule()
+                        .fill(diskWriteColor)
+                        .frame(height: barHeight(point.writeBytesPerSecond, peak: peak))
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+            }
+            .frame(height: Self.halfHeight, alignment: .top)
+        }
+    }
+
+    private func barHeight(_ value: Double, peak: Double) -> CGFloat {
+        guard value > 0 else { return 1 }
+        return max(2, Self.halfHeight * value / peak)
     }
 }
 

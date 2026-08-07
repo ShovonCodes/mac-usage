@@ -9,6 +9,9 @@ import Foundation
 struct CpuUsageSnapshot {
     var userPercent: Double = 0
     var systemPercent: Double = 0
+    /// One entry per logical core, in kernel order. Collected on the
+    /// same syscall as the totals above, so it costs nothing extra.
+    var cores: [CoreUsage] = []
 
     /// Total busy percentage (what most people think of as "CPU usage").
     var totalBusyPercent: Double {
@@ -33,6 +36,15 @@ struct ProcessCpuUsage: Identifiable {
     let name: String
     let executablePath: String // used to look up the app icon
     let cpuPercent: Double
+}
+
+/// One logical core's share of the last sample.
+struct CoreUsage: Identifiable {
+    let id: Int                 // index as the kernel reports it
+    var busyPercent: Double = 0
+    /// "Performance" / "Efficiency" on Apple Silicon; nil on Intel,
+    /// where every core is the same kind.
+    var clusterName: String?
 }
 
 /// Everything the expanded CPU hover panel displays that isn't
@@ -93,6 +105,29 @@ struct BatteryHistoryPoint: Identifiable {
     /// nil = no reading recorded during that hour (e.g. Mac was asleep
     /// the whole hour, or the app wasn't running yet).
     let levelPercent: Double?
+}
+
+/// Boot volume capacity plus how fast the physical disks are being
+/// read and written right now.
+struct DiskSnapshot {
+    var totalBytes: UInt64 = 0
+    var freeBytes: UInt64 = 0
+    var readBytesPerSecond: Double = 0
+    var writeBytesPerSecond: Double = 0
+
+    var usedBytes: UInt64 { totalBytes > freeBytes ? totalBytes - freeBytes : 0 }
+
+    var usedPercent: Double {
+        guard totalBytes > 0 else { return 0 }
+        return Double(usedBytes) / Double(totalBytes) * 100.0
+    }
+}
+
+/// One tick of disk throughput, for the hover chart.
+struct DiskHistoryPoint: Identifiable {
+    let id: Date
+    let readBytesPerSecond: Double
+    let writeBytesPerSecond: Double
 }
 
 /// A snapshot of how much RAM is being used.

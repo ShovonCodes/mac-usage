@@ -45,6 +45,9 @@ The panel never becomes the "active" window, so AppKit/SwiftUI behave unusually.
 - SMC (fans + temperatures) via `SmcConnection`, no root needed; sensor keys are discovered by scanning at startup, not hard-coded (differs per Mac model). Fan keys: `F#Ac/Mn/Mx`.
 - Battery history seeds 24 h from `pmset -g log` on first read (~2 s, kept off-main); live samples merge in hourly buckets.
 - Battery health: System Settings' "Maximum Capacity" is powerd's model output, published in **no** public API, and every registry ratio reads several points higher (Nominal/Design, Raw/Design). Read it via `system_profiler SPPowerDataType -json` (~0.2 s, cached hourly in `BatteryReader`); registry ratio is only the pre-first-fetch fallback.
+- Per-core CPU: `host_processor_info` already returns per-core ticks; `CpuUsageReader` keeps them instead of only summing. **Core order is not the sysctl order**: sysctl calls the fastest cluster `perflevel0`, but the kernel reports cores slowest-cluster-first. Verified on M1 by pinning four userInteractive threads: indices 4-7 hit 98%, 0-3 stayed idle, so 0-3 are Efficiency and 4-7 Performance. `CpuTopology` walks perflevels backwards for this reason. Intel has no perflevels, so cores come back unlabelled.
+- Disk I/O from each `IOBlockStorageDriver`'s `Statistics` dict (`Bytes (Read)`/`Bytes (Write)`, counters since boot, no root). **Skip virtual devices**: a mounted .dmg publishes an identical driver, so filter on the provider's `Protocol Characteristics` → `Physical Interconnect` == `"Virtual Interface"`. Same spirit as the network reader's virtual-interface skip.
+- Disk free space uses `volumeAvailableCapacityForImportantUsage`, not the plain available-capacity key: it counts purgeable space and so matches Finder and System Settings. The plain key reads several GB lower.
 - Network speed from `NET_RT_IFLIST2` 64-bit interface counters, skipping virtual interfaces (`lo/utun/awdl/llw/gif/stf/bridge/ap`).
 - Wi-Fi SSID: CoreWLAN returns nil without location permission → falls back to parsing `ipconfig getsummary`.
 - The public-IP lookup (api.ipify.org, 10-min cache, panel-open only) is **the app's only network request** and is disabled by the `fetchPublicIP` default. Keep it that way, the README promises it.
@@ -52,7 +55,7 @@ The panel never becomes the "active" window, so AppKit/SwiftUI behave unusually.
 
 ### Persistence
 
-All settings are `@AppStorage` in the `com.macusage.app` defaults domain (wiped by `uninstall.sh`): `showCpuCard` … `showFansCard`, `cardOrder` (comma-separated `ExpandableSection` raw values; parser drops unknowns and appends missing so new cards appear for old installs), `fetchPublicIP`, `showsTemperatureSensorNames`, `showMenuBarStrip`, `menuBarShowCpu`/`Memory`/`Network`/`Temperature`. Menu bar keys default to **on** (temperature off), so they are read via `MenuBarSettings`, which checks `object(forKey:)` for absence rather than `bool(forKey:)` (that returns false for unset keys and would silently invert every default).
+All settings are `@AppStorage` in the `com.macusage.app` defaults domain (wiped by `uninstall.sh`): `showCpuCard` … `showFansCard`, `cardOrder` (comma-separated `ExpandableSection` raw values; parser drops unknowns and appends missing so new cards appear for old installs), `fetchPublicIP`, `showsTemperatureSensorNames`, `showMenuBarStrip`, `menuBarShowCpu`/`Memory`/`Network`/`Temperature`, `showDiskCard`, `showsPerCoreUsage`. Menu bar keys default to **on** (temperature off), so they are read via `MenuBarSettings`, which checks `object(forKey:)` for absence rather than `bool(forKey:)` (that returns false for unset keys and would silently invert every default).
 
 ## Subagents
 

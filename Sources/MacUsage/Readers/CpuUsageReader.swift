@@ -12,6 +12,11 @@ import Foundation
 
 final class CpuUsageReader {
 
+    /// Per-core tick counters from the previous sample, in the order
+    /// the kernel reports cores. Machine-wide totals are summed from
+    /// these rather than tracked separately.
+    private var previousCoreTicks: [(user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)] = []
+
     /// Tick counters from the previous sample, so we can compute a delta.
     private var previousUserTicks: UInt64 = 0
     private var previousSystemTicks: UInt64 = 0
@@ -38,7 +43,13 @@ final class CpuUsageReader {
             return CpuUsageSnapshot()
         }
 
-        // Sum the tick counters of every CPU core into machine-wide totals.
+        // Read every core's counters, then sum them for the
+        // machine-wide numbers. The per-core values used to be summed
+        // away here; they are kept now so the CPU detail panel can
+        // show each core, which costs nothing extra to collect.
+        var coreTicks: [(user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)] = []
+        coreTicks.reserveCapacity(Int(processorCount))
+
         var totalUserTicks: UInt64 = 0
         var totalSystemTicks: UInt64 = 0
         var totalIdleTicks: UInt64 = 0
@@ -48,11 +59,16 @@ final class CpuUsageReader {
         for coreIndex in 0..<Int(processorCount) {
             let baseIndex = coreIndex * ticksPerCore
             // The kernel counters are unsigned 32-bit, but Swift sees the array
-            // as Int32 — reinterpret the bits so large values don't crash us.
-            totalUserTicks += UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_USER)]))
-            totalSystemTicks += UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_SYSTEM)]))
-            totalIdleTicks += UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_IDLE)]))
-            totalNiceTicks += UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_NICE)]))
+            // as Int32, so reinterpret the bits: large values would otherwise trap.
+            let user = UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_USER)]))
+            let system = UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_SYSTEM)]))
+            let idle = UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_IDLE)]))
+            let nice = UInt64(UInt32(bitPattern: info[baseIndex + Int(CPU_STATE_NICE)]))
+            coreTicks.append((user, system, idle, nice))
+            totalUserTicks += user
+            totalSystemTicks += system
+            totalIdleTicks += idle
+            totalNiceTicks += nice
         }
 
         // Give the kernel its memory back.
@@ -76,7 +92,25 @@ final class CpuUsageReader {
             }
         }
 
+        if previousCoreTicks.count == coreTicks.count {
+            let names = CpuTopology.clusterNames(coreCount: coreTicks.count)
+            snapshot.cores = coreTicks.indices.map { index in
+                let now = coreTicks[index], before = previousCoreTicks[index]
+                let user = Double(now.user &- before.user)
+                let system = Double(now.system &- before.system)
+                let idle = Double(now.idle &- before.idle)
+                let nice = Double(now.nice &- before.nice)
+                let total = user + system + idle + nice
+                return CoreUsage(
+                    id: index,
+                    busyPercent: total > 0 ? (user + system + nice) / total * 100 : 0,
+                    clusterName: names.indices.contains(index) ? names[index] : nil
+                )
+            }
+        }
+
         // Remember this sample for next time.
+        previousCoreTicks = coreTicks
         previousUserTicks = totalUserTicks
         previousSystemTicks = totalSystemTicks
         previousIdleTicks = totalIdleTicks

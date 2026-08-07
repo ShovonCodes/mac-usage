@@ -33,6 +33,8 @@ final class StatsStore: ObservableObject {
     @Published var networkSpeed = NetworkSpeedSnapshot()
     @Published var networkHistory: [NetworkHistoryPoint] = []
     @Published var networkDetails = NetworkDetails()
+    @Published var disk = DiskSnapshot()
+    @Published var diskHistory: [DiskHistoryPoint] = []
     @Published var battery = BatterySnapshot()
     @Published var batteryHistory: [BatteryHistoryPoint] = []
     /// Minutes since the Mac was last on AC power (nil while plugged in).
@@ -50,6 +52,7 @@ final class StatsStore: ObservableObject {
     private let cpuDetailsReader = CpuDetailsReader()
     private let memoryReader = MemoryUsageReader()
     private let memoryDetailsReader = MemoryDetailsReader()
+    private let diskReader = DiskReader()
     private let batteryReader = BatteryReader()
     private let batteryHistoryReader = BatteryHistoryReader()
     private let networkSpeedReader = NetworkSpeedReader()
@@ -102,6 +105,9 @@ final class StatsStore: ObservableObject {
     /// five-minute window — keep enough for that even at the fast
     /// 2-second cadence (200 × 2 s ≈ 6.7 min).
     private let networkHistoryCapacity = 200
+    /// Disk throughput is sampled on the slow lane, so far fewer
+    /// points cover the same span as the network chart.
+    private let diskHistoryCapacity = 60
 
     /// When any stat crosses these, an alert fires.
     private struct AlertThresholds {
@@ -218,6 +224,18 @@ final class StatsStore: ObservableObject {
     /// of the timer (see the sample-interval properties above).
     private func refreshSlowStats() {
         battery = batteryReader.readSnapshot()
+
+        // IO registry walk: cheap, but not fast-lane cheap, and disk
+        // rates do not need two-second resolution to be useful.
+        disk = diskReader.readSnapshot()
+        diskHistory.append(DiskHistoryPoint(
+            id: Date(),
+            readBytesPerSecond: disk.readBytesPerSecond,
+            writeBytesPerSecond: disk.writeBytesPerSecond
+        ))
+        if diskHistory.count > diskHistoryCapacity {
+            diskHistory.removeFirst(diskHistory.count - diskHistoryCapacity)
+        }
 
         // History needs the fresh level; its first call also seeds
         // 24h of readings from the power log (~2s), so keep it off
