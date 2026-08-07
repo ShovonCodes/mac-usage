@@ -272,8 +272,10 @@ struct StatsPanelView: View {
 
     private var temperatureDetailContent: some View {
         TemperatureDetailColumn()
+            // Wider than the other columns: this one carries a 30+
+            // sensor grid, and at 240 the chips were cramped.
             .environmentObject(statsStore)
-            .frame(width: 240)
+            .frame(width: 300)
             .padding(12)
             .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
     }
@@ -690,9 +692,9 @@ struct MemoryDetailColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "Memory Details")
-            StatSectionCard(title: "Pressure, last 24 h") {
+            StatSectionCard(title: "Pressure, last 8 h") {
                 TrendChart(
-                    points: statsStore.history.recent(hours: 24),
+                    points: statsStore.history.recent(hours: 8),
                     value: { $0.memoryPressure },
                     scale: .fixed(0...100),
                     color: { pressureColor($0) },
@@ -1081,15 +1083,6 @@ struct TemperatureDetailColumn: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 DetailColumnHeader(title: "Temperature Details")
-            StatSectionCard(title: "CPU, last 24 h") {
-                TrendChart(
-                    points: statsStore.history.recent(hours: 24),
-                    value: { $0.cpuTemperature },
-                    scale: .padded,
-                    color: { temperatureColor($0) },
-                    format: { String(format: "%.0f°", $0) }
-                )
-            }
                 Spacer()
                 Button {
                     showsSensorNames.toggle()
@@ -1099,6 +1092,15 @@ struct TemperatureDetailColumn: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help(showsSensorNames ? "Show compact grid" : "Show sensor names")
+            }
+            StatSectionCard(title: "CPU, last 8 h") {
+                TrendChart(
+                    points: statsStore.history.recent(hours: 8),
+                    value: { $0.cpuTemperature },
+                    scale: .padded,
+                    color: { temperatureColor($0) },
+                    format: { String(format: "%.0f°", $0) }
+                )
             }
             if statsStore.temperatures.isEmpty {
                 StatSectionCard(title: "Sensors") {
@@ -1405,6 +1407,11 @@ struct TrendChart: View {
     let scale: Scale
     let color: (Double) -> Color
     let format: (Double) -> String
+    /// Hours of history to draw. Eight rather than the full day the
+    /// store keeps: a whole day squeezed into a 240 pt column gives
+    /// bars a couple of pixels wide, which reads as noise. Eight hours
+    /// covers a working session and leaves the bars legible.
+    var hours: Double = 8
 
     /// Percentages want a fixed 0-100 so heights stay comparable
     /// between glances. Temperatures have no natural full scale, so
@@ -1415,12 +1422,15 @@ struct TrendChart: View {
     }
 
     private static let chartHeight: CGFloat = 44
-    private static let slotCount = 72   // 24 h in 20-minute slots
+    /// 32 slots over 8 hours is a 15-minute bucket, and bars roughly
+    /// 6 pt wide. The previous 72 slots were 3 pt bars with 1 pt gaps,
+    /// which is where the crowding came from.
+    private static let slotCount = 32
 
     var body: some View {
         let slots = TimeBuckets.slots(
             points, timestamp: \.date,
-            window: 24 * 3600, slotCount: Self.slotCount, now: Date()
+            window: hours * 3600, slotCount: Self.slotCount, now: Date()
         )
         let averages: [Double?] = slots.map { rows in
             let values = rows.compactMap(value)
@@ -1437,9 +1447,9 @@ struct TrendChart: View {
                     .foregroundStyle(.secondary)
                     .frame(height: Self.chartHeight, alignment: .center)
             } else {
-                HStack(alignment: .bottom, spacing: 1) {
+                HStack(alignment: .bottom, spacing: 2) {
                     ForEach(0..<Self.slotCount, id: \.self) { index in
-                        Rectangle()
+                        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                             .fill(averages[index].map(color) ?? Color.clear)
                             .frame(height: barHeight(averages[index], in: range))
                             .frame(maxWidth: .infinity, alignment: .bottom)
@@ -1448,7 +1458,7 @@ struct TrendChart: View {
                 .frame(height: Self.chartHeight, alignment: .bottom)
 
                 HStack {
-                    Text("24 h ago")
+                    Text("\(Int(hours)) h ago")
                     Spacer()
                     if let peak = present.max() {
                         Text("peak \(format(peak))")

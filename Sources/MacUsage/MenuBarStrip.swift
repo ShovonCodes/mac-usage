@@ -84,7 +84,12 @@ struct MenuBarReadout {
     var cpuBusyPercent: Double = 0
     /// Total busy percent per tick, oldest first, for the sparkline.
     var cpuHistory: [Double] = []
-    var memoryUsedPercent: Double = 0
+    /// Pressure, not "how much RAM is allocated". macOS deliberately
+    /// fills unused RAM with cache, so a high usage figure is normal
+    /// and says nothing; pressure is the number that tells you the
+    /// machine is actually struggling. Activity Monitor leads with it
+    /// for the same reason.
+    var memoryPressurePercent: Double = 0
     var uploadBytesPerSecond: Double = 0
     var downloadBytesPerSecond: Double = 0
     var cpuTemperatureCelsius: Double?
@@ -96,27 +101,47 @@ enum MenuBarStrip {
     private static let textSize: CGFloat = 11
     private static let sparklineWidth: CGFloat = 26
     private static let sparklineHeight: CGFloat = 12
-    private static let meterWidth: CGFloat = 9
+    /// Chip body plus a pin's width on each side.
+    private static let meterWidth: CGFloat = 12
+    private static let pinLength: CGFloat = 1.5
     private static let meterHeight: CGFloat = 12
     /// Space between the glyph and the first segment, and between
     /// segments. Wider than the gap inside a segment so the readouts
     /// group visually instead of running together.
     private static let segmentGap: CGFloat = 9
     private static let innerGap: CGFloat = 4
+    private static let ruleWidth: CGFloat = 1
+    /// Space between a rule and the nearest readout.
+    private static let rulePadding: CGFloat = 7
+    private static let alertMarkWidth: CGFloat = 6
 
-    /// Build the whole status item image: glyph, then each visible
-    /// segment. With no segments this is byte-for-byte the old
-    /// glyph-only image.
+    /// Build the status item image.
+    ///
+    /// Two shapes, not one. With no segments switched on this is the
+    /// gauge glyph alone, exactly as before the strip existed. With
+    /// segments on, the glyph is dropped and the readouts sit between
+    /// two hairline rules instead: the glyph was costing ~24 pt to
+    /// repeat an identity the readouts already imply, and the rules
+    /// make the group read as one object rather than as loose numbers
+    /// drifting among the other menu bar items.
     static func make(readout: MenuBarReadout,
                      segments: [MenuBarSegment],
                      alerting: Bool) -> NSImage {
         let parts = segments.compactMap { part(for: $0, readout: readout) }
-        let width = glyphSize + parts.reduce(0) { $0 + segmentGap + $1.width }
+        guard !parts.isEmpty else { return glyphOnly(alerting: alerting) }
+
+        // The alert badge normally lives on the glyph. Without one it
+        // becomes a mark inside the leading rule, so an alert is still
+        // visible even when the metric that raised it has no segment
+        // switched on.
+        let alertWidth = alerting ? alertMarkWidth + innerGap : 0
+        let width = rulePadding * 2 + alertWidth
+            + parts.reduce(0) { $0 + $1.width } + segmentGap * CGFloat(parts.count - 1)
 
         let image = NSImage(size: NSSize(width: width, height: glyphSize),
                             flipped: false) { _ in
             // A template image is recolored by macOS, so black is
-            // right whatever the menu bar looks like. The alert badge
+            // right whatever the menu bar looks like. The alert mark
             // needs real red, which forfeits template treatment, and
             // then the drawing has to match the menu bar itself.
             let color: NSColor
@@ -128,14 +153,16 @@ enum MenuBarStrip {
                 color = .black
             }
 
-            MenuBarIcon.drawGlyph(size: glyphSize, color: color)
-            if alerting {
-                MenuBarIcon.drawAlertBadge(size: glyphSize)
-            }
+            drawRule(at: 0, color: color)
+            drawRule(at: width - ruleWidth, color: color)
 
-            var x = glyphSize
-            for part in parts {
-                x += segmentGap
+            var x = rulePadding
+            if alerting {
+                drawAlertMark(at: x)
+                x += alertMarkWidth + innerGap
+            }
+            for (index, part) in parts.enumerated() {
+                if index > 0 { x += segmentGap }
                 part.draw(x, color)
                 x += part.width
             }
@@ -147,6 +174,44 @@ enum MenuBarStrip {
             readout: readout, segments: segments, alerting: alerting
         )
         return image
+    }
+
+    /// The strip switched off: just the gauge, as it always was.
+    private static func glyphOnly(alerting: Bool) -> NSImage {
+        let image = NSImage(size: NSSize(width: glyphSize, height: glyphSize),
+                            flipped: false) { _ in
+            if alerting {
+                let isDarkMenuBar = NSAppearance.currentDrawing()
+                    .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                MenuBarIcon.drawGlyph(size: glyphSize, color: isDarkMenuBar ? .white : .black)
+                MenuBarIcon.drawAlertBadge(size: glyphSize)
+            } else {
+                MenuBarIcon.drawGlyph(size: glyphSize, color: .black)
+            }
+            return true
+        }
+        image.isTemplate = !alerting
+        image.accessibilityDescription = alerting
+            ? "Mac Usage: attention needed" : "Mac Usage"
+        return image
+    }
+
+    /// A hairline bracket. Faint on purpose: it should group the
+    /// readouts, not compete with them.
+    private static func drawRule(at x: CGFloat, color: NSColor) {
+        let inset: CGFloat = 5
+        color.withAlphaComponent(0.25).setFill()
+        NSBezierPath(rect: NSRect(x: x, y: inset,
+                                  width: ruleWidth,
+                                  height: glyphSize - inset * 2)).fill()
+    }
+
+    /// Small red dot: the badge's job, without the glyph to sit on.
+    private static func drawAlertMark(at x: CGFloat) {
+        let diameter = alertMarkWidth
+        NSColor.systemRed.setFill()
+        NSBezierPath(ovalIn: NSRect(x: x, y: (glyphSize - diameter) / 2,
+                                    width: diameter, height: diameter)).fill()
     }
 
     // MARK: Segment layout
@@ -174,10 +239,10 @@ enum MenuBarStrip {
             }
 
         case .memory:
-            let text = "\(Int(readout.memoryUsedPercent.rounded()))%"
+            let text = "\(Int(readout.memoryPressurePercent.rounded()))%"
             let textWidth = width(of: text)
             return Part(width: meterWidth + innerGap + textWidth) { x, color in
-                drawMeter(readout.memoryUsedPercent, at: x, color: color)
+                drawMeter(readout.memoryPressurePercent, at: x, color: color)
                 draw(text, at: x + meterWidth + innerGap, color: color)
             }
 
@@ -252,25 +317,46 @@ enum MenuBarStrip {
         }
     }
 
-    /// A small vertical tank that fills from the bottom. Echoes the
-    /// panel's ring gauges: a faint full track with a solid value on
-    /// top, so the reading is legible even at a glance.
+    /// A memory chip that fills from the bottom.
+    ///
+    /// This was a rounded tank, which at this size is the exact shape
+    /// of the macOS battery indicator sitting a few points away in the
+    /// same menu bar. Stacked graduation bars fixed that but read as a
+    /// hamburger menu once mostly full. A chip outline with pins down
+    /// each side is unambiguous at every level: the silhouette says
+    /// "memory" on its own, and the fill stays continuous so the value
+    /// is exact rather than quantised.
     private static func drawMeter(_ percent: Double,
                                   at x: CGFloat,
                                   color: NSColor) {
+        let bodyWidth = meterWidth - pinLength * 2
         let bottom = (glyphSize - meterHeight) / 2
-        let track = NSRect(x: x, y: bottom, width: meterWidth, height: meterHeight)
-        let radius: CGFloat = 2
+        let body = NSRect(x: x + pinLength, y: bottom,
+                          width: bodyWidth, height: meterHeight)
 
-        color.withAlphaComponent(0.3).setFill()
-        NSBezierPath(roundedRect: track, xRadius: radius, yRadius: radius).fill()
+        let outline = NSBezierPath(roundedRect: body, xRadius: 1.5, yRadius: 1.5)
+        outline.lineWidth = 1
+        color.withAlphaComponent(0.55).setStroke()
+        outline.stroke()
 
+        // Pins, three a side. They are what stop this reading as a
+        // plain rounded rectangle, which is to say as a battery.
+        color.withAlphaComponent(0.55).setFill()
+        for index in 0..<3 {
+            let y = body.minY + 2.5 + CGFloat(index) * 3.5
+            NSBezierPath(rect: NSRect(x: body.minX - pinLength, y: y,
+                                      width: pinLength, height: 1)).fill()
+            NSBezierPath(rect: NSRect(x: body.maxX, y: y,
+                                      width: pinLength, height: 1)).fill()
+        }
+
+        let well = body.insetBy(dx: 2, dy: 2)
         let fraction = min(max(percent, 0), 100) / 100
         guard fraction > 0 else { return }
-        let fillHeight = max(1, meterHeight * fraction)
-        let fill = NSRect(x: x, y: bottom, width: meterWidth, height: fillHeight)
         color.setFill()
-        NSBezierPath(roundedRect: fill, xRadius: radius, yRadius: radius).fill()
+        NSBezierPath(rect: NSRect(x: well.minX, y: well.minY,
+                                  width: well.width,
+                                  height: well.height * fraction)).fill()
     }
 
     // MARK: Formatting
@@ -296,7 +382,7 @@ enum MenuBarStrip {
             case .cpu:
                 parts.append("CPU \(Int(readout.cpuBusyPercent.rounded())) percent")
             case .memory:
-                parts.append("memory \(Int(readout.memoryUsedPercent.rounded())) percent")
+                parts.append("memory pressure \(Int(readout.memoryPressurePercent.rounded())) percent")
             case .network:
                 parts.append("down \(rate(readout.downloadBytesPerSecond)) per second, "
                              + "up \(rate(readout.uploadBytesPerSecond)) per second")

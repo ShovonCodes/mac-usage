@@ -137,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let readout = MenuBarReadout(
             cpuBusyPercent: statsStore.cpuUsage.totalBusyPercent,
             cpuHistory: statsStore.cpuHistory.map { $0.userPercent + $0.systemPercent },
-            memoryUsedPercent: statsStore.memoryUsage.usedPercent,
+            memoryPressurePercent: statsStore.memoryUsage.pressurePercent,
             uploadBytesPerSecond: statsStore.networkSpeed.uploadBytesPerSecond,
             downloadBytesPerSecond: statsStore.networkSpeed.downloadBytesPerSecond,
             cpuTemperatureCelsius: statsStore.averageTemperatures[.cpu]
