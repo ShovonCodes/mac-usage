@@ -26,30 +26,58 @@ import AppKit
 // explicitly. See `SettingsWindow.open()`.
 // ─────────────────────────────────────────────────────────────────
 
-/// Opens the Settings scene from anywhere in the app.
-enum SettingsWindow {
+/// Owns the Settings window.
+///
+/// This deliberately does *not* use SwiftUI's `Settings` scene. Opening
+/// that scene from code requires sending a private, undocumented
+/// selector (`showPreferencesWindow:`, renamed to `showSettingsWindow:`
+/// in macOS 14), and on macOS 26 neither one does anything: the gear
+/// button silently did nothing at all.
+///
+/// The keyboard shortcut those selectors exist to complement is no use
+/// to us either. An `.accessory` app has no menu bar, so there is no
+/// Settings menu item and ⌘, never reaches us. The gear button in the
+/// panel is the only way in, which makes an ordinary NSWindow we open
+/// ourselves both simpler and more predictable than the scene.
+@MainActor
+final class SettingsWindowController {
+
     /// The panel's gear button posts this; the AppDelegate hides the
-    /// panel and calls `open()`. It goes through the delegate rather
+    /// panel and shows the window. It goes through the delegate rather
     /// than opening directly because dismissing the panel is the
     /// delegate's job, and the click-outside monitor it owns does not
     /// fire for clicks landing in our own windows.
     static let openRequested = Notification.Name("MacUsageOpenSettingsRequested")
 
-    @MainActor
-    static func open() {
+    /// Kept alive between opens so reopening restores the same window
+    /// (and its selected tab) rather than building a new one.
+    private var window: NSWindow?
+
+    func show() {
         // An .accessory app is never frontmost on its own, so the
         // window would otherwise open behind whatever has focus.
         NSApp.activate(ignoringOtherApps: true)
 
-        // The selector was renamed in macOS 14. Both are private, but
-        // this is the only way to open a SwiftUI Settings scene
-        // programmatically.
-        let selector = if #available(macOS 14, *) {
-            Selector(("showSettingsWindow:"))
-        } else {
-            Selector(("showPreferencesWindow:"))
+        if let window {
+            window.makeKeyAndOrderFront(nil)
+            return
         }
-        NSApp.sendAction(selector, to: nil, from: nil)
+
+        let hostingView = NSHostingView(rootView: SettingsView())
+        let newWindow = NSWindow(
+            contentRect: NSRect(origin: .zero, size: hostingView.fittingSize),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        newWindow.title = "Mac Usage Settings"
+        newWindow.contentView = hostingView
+        // Closing must not deallocate it, or reopening lands on a
+        // dangling reference.
+        newWindow.isReleasedWhenClosed = false
+        newWindow.center()
+        newWindow.makeKeyAndOrderFront(nil)
+        window = newWindow
     }
 }
 

@@ -415,7 +415,7 @@ struct StatsPanelView: View {
             Spacer()
             Button {
                 NotificationCenter.default.post(
-                    name: SettingsWindow.openRequested, object: nil
+                    name: SettingsWindowController.openRequested, object: nil
                 )
             } label: {
                 Image(systemName: "gearshape")
