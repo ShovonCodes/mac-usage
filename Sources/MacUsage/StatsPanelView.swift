@@ -31,6 +31,25 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Icon for this card in the Settings list.
+    ///
+    /// Names are the SF Symbols 4 spellings, which is the newest set
+    /// macOS 13 ships. `battery.100` and `fanblades` are older names
+    /// that no longer resolve, and `fan` only arrived in SF Symbols 5,
+    /// so fans fall back to `wind` on macOS 13. A missing symbol draws
+    /// nothing rather than failing, so getting these wrong shows up as
+    /// a blank gap in the list.
+    var symbolName: String {
+        switch self {
+        case .cpu: return "cpu"
+        case .memory: return "memorychip"
+        case .battery: return "battery.100percent"
+        case .network: return "network"
+        case .temperature: return "thermometer.medium"
+        case .fans: return if #available(macOS 14, *) { "fan" } else { "wind" }
+        }
+    }
+
     /// Parse the persisted "cpu,memory,..." order string.
     ///
     /// Unknown entries are dropped and missing cards appended, so the

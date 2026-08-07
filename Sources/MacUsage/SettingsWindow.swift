@@ -4,41 +4,27 @@ import AppKit
 // ─────────────────────────────────────────────────────────────────
 // Settings, as a real window.
 //
-// This used to be a page *inside* the stats panel. That panel is a
-// borderless, non-activating NSPanel, which means AppKit never treats
-// it as the active window, and that had two costs:
+// Two things this deliberately does not use:
 //
-//   • System controls render in their inactive state, so a checked
-//     Toggle looked the same as an unchecked one. The workaround was
-//     a hand-drawn `SettingSwitch`.
-//   • The window can never become key, so system drag sessions do not
-//     work. Reordering cards needed a hand-rolled DragGesture with
-//     row offsets, hysteresis and a deferred order commit.
+//  • SwiftUI's `Settings` scene. Opening it from code needs a private
+//    selector (`showPreferencesWindow:`, renamed `showSettingsWindow:`
+//    in macOS 14) and on macOS 26 neither is handled - the gear button
+//    silently did nothing. We own an ordinary NSWindow instead.
 //
-// Both workarounds are deleted now: in a normal window `Toggle` and
-// `List`'s `.onMove` just work. The bigger reason for the move is
-// that a non-key window also cannot take *keyboard focus*, so a text
-// field is impossible there. Editable alert thresholds need one.
+//  • The ⌘, shortcut those selectors pair with. An `.accessory` app
+//    has no menu bar, so there is no Settings menu item for a shortcut
+//    to hang off. The panel's gear button is the only way in.
 //
-// The scene itself is SwiftUI's `Settings`, which gives us the
-// standard ⌘, behaviour for free. Because the app runs as
-// `.accessory` (no Dock icon), opening it has to activate the app
-// explicitly. See `SettingsWindow.open()`.
+// Why a window at all, when this used to live inside the stats panel:
+// that panel is a borderless, non-activating NSPanel, so it can never
+// become key. System controls render in their inactive state (which
+// is why a hand-drawn `SettingSwitch` existed), system drag sessions
+// do not work (which is why card reordering was a hand-rolled
+// DragGesture), and - the part with no workaround - it cannot take
+// keyboard focus at all, so a text field is inert. Editable alert
+// thresholds need one.
 // ─────────────────────────────────────────────────────────────────
 
-/// Owns the Settings window.
-///
-/// This deliberately does *not* use SwiftUI's `Settings` scene. Opening
-/// that scene from code requires sending a private, undocumented
-/// selector (`showPreferencesWindow:`, renamed to `showSettingsWindow:`
-/// in macOS 14), and on macOS 26 neither one does anything: the gear
-/// button silently did nothing at all.
-///
-/// The keyboard shortcut those selectors exist to complement is no use
-/// to us either. An `.accessory` app has no menu bar, so there is no
-/// Settings menu item and ⌘, never reaches us. The gear button in the
-/// panel is the only way in, which makes an ordinary NSWindow we open
-/// ourselves both simpler and more predictable than the scene.
 @MainActor
 final class SettingsWindowController {
 
@@ -49,8 +35,13 @@ final class SettingsWindowController {
     /// fire for clicks landing in our own windows.
     static let openRequested = Notification.Name("MacUsageOpenSettingsRequested")
 
+    /// Both panes are built to want the same height, so the window
+    /// never resizes between tabs and neither pane inherits the
+    /// other's empty space.
+    private static let contentSize = NSSize(width: 460, height: 316)
+
     /// Kept alive between opens so reopening restores the same window
-    /// (and its selected tab) rather than building a new one.
+    /// and its selected tab rather than building a new one.
     private var window: NSWindow?
 
     func show() {
@@ -63,21 +54,42 @@ final class SettingsWindowController {
             return
         }
 
-        let hostingView = NSHostingView(rootView: SettingsView())
-        let newWindow = NSWindow(
-            contentRect: NSRect(origin: .zero, size: hostingView.fittingSize),
+        let newWindow = SettingsPanelWindow(
+            contentRect: NSRect(origin: .zero, size: Self.contentSize),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         newWindow.title = "Mac Usage Settings"
-        newWindow.contentView = hostingView
+        newWindow.contentView = NSHostingView(rootView: SettingsView())
         // Closing must not deallocate it, or reopening lands on a
         // dangling reference.
         newWindow.isReleasedWhenClosed = false
         newWindow.center()
         newWindow.makeKeyAndOrderFront(nil)
         window = newWindow
+    }
+}
+
+/// Escape and ⌘W both close the window.
+///
+/// Neither comes for free here. Escape only closes a window AppKit
+/// considers cancellable, and ⌘W is normally supplied by the File menu
+/// - which an `.accessory` app does not have. Without these the only
+/// way out is the traffic light, which is a lot of mousing for a
+/// window you open to flip one switch.
+private final class SettingsPanelWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        close()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command),
+           event.charactersIgnoringModifiers?.lowercased() == "w" {
+            close()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 
@@ -89,7 +101,7 @@ struct SettingsView: View {
             CardsSettingsView()
                 .tabItem { Label("Cards", systemImage: "rectangle.stack") }
         }
-        .frame(width: 460)
+        .padding(.top, 8)
     }
 }
 
@@ -106,16 +118,21 @@ private struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Launch at login", isOn: launchAtLoginBinding)
+                SettingRow(
+                    title: "Launch at login",
+                    detail: "Start Mac Usage automatically after you log in.",
+                    isOn: launchAtLoginBinding
+                )
             }
             Section {
-                Toggle("Fetch public IP", isOn: $fetchesPublicIP)
-            } footer: {
-                Text("The public-IP lookup is the only network request "
-                     + "Mac Usage ever makes. Everything else is read "
-                     + "locally from the kernel, IOKit and the SMC.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                SettingRow(
+                    title: "Fetch public IP",
+                    detail: "Shows your public address in the Network card. "
+                          + "This is the only network request Mac Usage makes; "
+                          + "every other reading comes from the kernel, IOKit "
+                          + "and the SMC on this Mac.",
+                    isOn: $fetchesPublicIP
+                )
             }
         }
         .formStyle(.grouped)
@@ -137,6 +154,29 @@ private struct GeneralSettingsView: View {
     }
 }
 
+/// A switch with the sentence that explains what it does underneath.
+/// The detail line is what lets this pane fill its height honestly
+/// rather than sitting in a void, and it earns the space: "Fetch
+/// public IP" does not tell you it is the app's only network request.
+private struct SettingRow: View {
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
 // MARK: Cards
 
 private struct CardsSettingsView: View {
@@ -149,32 +189,45 @@ private struct CardsSettingsView: View {
     @AppStorage("showFansCard") private var showsFansCard = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Drag to reorder. Turn off the cards you do not need.")
+        VStack(alignment: .leading, spacing: 0) {
+            Text("The panel shows these cards in this order.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
+
             List {
                 ForEach(ExpandableSection.order(from: cardOrderRaw)) { section in
                     // The checkbox keeps its label hidden and the name
-                    // is drawn separately, so the row has inert area to
-                    // grab. A plain `Toggle("CPU", …)` makes the whole
-                    // row the control's hit target, which swallows the
-                    // drag `.onMove` needs.
-                    HStack(spacing: 8) {
+                    // is drawn separately, so the row keeps inert area
+                    // to grab. A plain `Toggle("CPU", …)` would make
+                    // the whole row the control's hit target and
+                    // swallow the drag `.onMove` needs.
+                    HStack(spacing: 10) {
                         Toggle("", isOn: visibilityBinding(for: section))
                             .labelsHidden()
+                        Image(systemName: section.symbolName)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18)
                         Text(section.displayName)
                         Spacer(minLength: 0)
                         Image(systemName: "line.3.horizontal")
                             .foregroundStyle(.tertiary)
                     }
+                    .padding(.vertical, 1)
                     .contentShape(Rectangle())
                 }
                 .onMove(perform: move)
             }
-            .frame(height: 190)
+            .scrollDisabled(true)
+
+            Text("Drag a row to reorder. Hidden cards keep their place.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
         }
-        .padding(20)
+        .padding(.vertical, 16)
     }
 
     private func move(from source: IndexSet, to destination: Int) {
