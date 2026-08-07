@@ -29,7 +29,8 @@ Hover any card for the full story.
   CPU temperature in the corner. Hover: every logical core as its own
   bar, grouped into performance and efficiency clusters on Apple
   Silicon, plus the usage breakdown and the five hungriest processes.
-- **🧠 Memory**: pressure and usage rings, iStat-style. Hover:
+- **🧠 Memory**: pressure and usage rings, iStat-style. Hover: a
+  24-hour pressure trend with its peak, plus
   App/Wired/Compressed/Free breakdown and a top-processes list that
   matches Activity Monitor's numbers (it uses the same footprint metric).
 - **🔋 Battery**: level ring with time remaining, health ring. Hover: a
@@ -43,7 +44,12 @@ Hover any card for the full story.
   images are excluded, so opening a .dmg does not read as disk activity.
 - **🌡️ Temperature**: every SMC sensor on your machine, grouped and
   color-coded from cool teal to alarming red; toggle raw sensor names on
-  when you want the hardware's identity.
+  when you want the hardware's identity. Hover also shows a 24-hour CPU
+  temperature trend.
+- **🕓 24-hour history**: CPU, memory, network and temperature are
+  recorded once a minute and kept for a day, so the trends survive
+  quitting and relaunching. Stored in
+  `~/Library/Application Support/MacUsage`, removed by `uninstall.sh`.
 - **🌀 Fans**: live RPM with each fan's min/max range (fanless Macs
   correctly report "No fans detected").
 - **🚨 Threshold alerts**: the menu bar icon grows a red badge when CPU

@@ -149,6 +149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        statsStore.persistBeforeQuit()
+    }
+
     // MARK: Status item clicks
 
     @objc private func statusItemClicked() {

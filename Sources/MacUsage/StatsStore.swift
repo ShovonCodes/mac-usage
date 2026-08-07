@@ -46,6 +46,9 @@ final class StatsStore: ObservableObject {
     /// Threshold alerts currently firing (drives the menu bar badge
     /// and the red banner at the top of the panel).
     @Published var activeAlerts: [StatAlert] = []
+    /// The 24 hour record, restored from disk at launch. Drives the
+    /// trend charts and survives relaunches.
+    let history = HistoryStore()
 
     // The readers that actually collect the data.
     private let cpuReader = CpuUsageReader()
@@ -127,6 +130,7 @@ final class StatsStore: ObservableObject {
     init() {
         // Take a first sample right away so the first panel open isn't empty.
         // (CPU % needs two samples to show a real number; this is sample #1.)
+        seedLiveChartsFromHistory()
         refreshFastStats()
         refreshSlowStats()
         restartTimers()
@@ -138,6 +142,25 @@ final class StatsStore: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor in self?.applyStripVisibilityChange() }
             }
+    }
+
+    /// Refill the live CPU and network charts from the persisted
+    /// record so they are not blank for two minutes after a relaunch.
+    /// Only one point per minute exists at this resolution, so the
+    /// charts come back sparse rather than solid. That is honest:
+    /// time-bucketed charts draw those as the isolated samples they
+    /// are instead of implying continuous data.
+    private func seedLiveChartsFromHistory() {
+        for row in history.recent(hours: 0.25) {
+            cpuHistory.append(CpuHistoryPoint(
+                id: row.date, userPercent: row.cpuUser, systemPercent: row.cpuSystem
+            ))
+            networkHistory.append(NetworkHistoryPoint(
+                id: row.date,
+                uploadBytesPerSecond: row.networkUp,
+                downloadBytesPerSecond: row.networkDown
+            ))
+        }
     }
 
     /// UserDefaults posts on any change, so restart only when the one
@@ -216,7 +239,26 @@ final class StatsStore: ObservableObject {
         }
 
         evaluateAlerts()
+
+        // Fold this sample into the 24 hour record. Costs an append,
+        // and once a minute an average and a file write.
+        history.record(
+            cpuUser: cpuUsage.userPercent,
+            cpuSystem: cpuUsage.systemPercent,
+            memoryPressure: memoryUsage.pressurePercent,
+            networkUp: networkSpeed.uploadBytesPerSecond,
+            networkDown: networkSpeed.downloadBytesPerSecond,
+            cpuTemperature: averageTemperatures[.cpu]
+        )
+
         menuBarTick &+= 1
+    }
+
+    /// Called from applicationWillTerminate: the minute in progress
+    /// would otherwise be lost.
+    func persistBeforeQuit() {
+        history.flushPending()
+        history.save()
     }
 
     /// The slow lane: anything touching the SMC, a subprocess, or the

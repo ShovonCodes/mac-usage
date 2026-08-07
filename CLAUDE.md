@@ -55,6 +55,8 @@ The panel never becomes the "active" window, so AppKit/SwiftUI behave unusually.
 
 ### Persistence
 
+`HistoryStore` keeps a 24 h record at one row per minute in `~/Library/Application Support/MacUsage/history.json` (**not** the defaults domain, so `uninstall.sh` deletes it separately). Live 2 s samples stay in memory only; 2 s over a day would be 43,200 rows per series and nothing reads that detail. Writes are atomic (write sibling, rename) and an unparseable file is discarded rather than repaired, because graphs are not worth blocking launch over. On launch the last 15 min seed the live CPU/network charts so they are not blank; those come back sparse at 1-minute resolution, which time-bucketed charts draw honestly.
+
 All settings are `@AppStorage` in the `com.macusage.app` defaults domain (wiped by `uninstall.sh`): `showCpuCard` … `showFansCard`, `cardOrder` (comma-separated `ExpandableSection` raw values; parser drops unknowns and appends missing so new cards appear for old installs), `fetchPublicIP`, `showsTemperatureSensorNames`, `showMenuBarStrip`, `menuBarShowCpu`/`Memory`/`Network`/`Temperature`, `showDiskCard`, `showsPerCoreUsage`. Menu bar keys default to **on** (temperature off), so they are read via `MenuBarSettings`, which checks `object(forKey:)` for absence rather than `bool(forKey:)` (that returns false for unset keys and would silently invert every default).
 
 ## Subagents

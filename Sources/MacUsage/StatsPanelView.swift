@@ -690,6 +690,15 @@ struct MemoryDetailColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "Memory Details")
+            StatSectionCard(title: "Pressure, last 24 h") {
+                TrendChart(
+                    points: statsStore.history.recent(hours: 24),
+                    value: { $0.memoryPressure },
+                    scale: .fixed(0...100),
+                    color: { pressureColor($0) },
+                    format: { String(format: "%.0f%%", $0) }
+                )
+            }
             StatSectionCard(title: "Breakdown") {
                 VStack(alignment: .leading, spacing: 4) {
                     BreakdownRow(color: Theme.blue, label: "App",
@@ -1072,6 +1081,15 @@ struct TemperatureDetailColumn: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 DetailColumnHeader(title: "Temperature Details")
+            StatSectionCard(title: "CPU, last 24 h") {
+                TrendChart(
+                    points: statsStore.history.recent(hours: 24),
+                    value: { $0.cpuTemperature },
+                    scale: .padded,
+                    color: { temperatureColor($0) },
+                    format: { String(format: "%.0f°", $0) }
+                )
+            }
                 Spacer()
                 Button {
                     showsSensorNames.toggle()
@@ -1372,6 +1390,98 @@ private struct ProcessRow: View {
             return NSWorkspace.shared.icon(forFile: String(path[..<appRange.lowerBound]) + ".app")
         }
         return NSWorkspace.shared.icon(forFile: path)
+    }
+}
+
+/// A 24 hour trend from the persisted record: one bar per minute,
+/// bucketed by real time so a stretch when the app was not running
+/// draws as the gap it was rather than being closed up.
+///
+/// This is what persistence buys. "Memory pressure is 48% right now"
+/// answers much less than "it peaked at 91% two hours ago".
+struct TrendChart: View {
+    let points: [HistoryMinute]
+    let value: (HistoryMinute) -> Double?
+    let scale: Scale
+    let color: (Double) -> Color
+    let format: (Double) -> String
+
+    /// Percentages want a fixed 0-100 so heights stay comparable
+    /// between glances. Temperatures have no natural full scale, so
+    /// they get padded around the observed range instead.
+    enum Scale {
+        case fixed(ClosedRange<Double>)
+        case padded
+    }
+
+    private static let chartHeight: CGFloat = 44
+    private static let slotCount = 72   // 24 h in 20-minute slots
+
+    var body: some View {
+        let slots = TimeBuckets.slots(
+            points, timestamp: \.date,
+            window: 24 * 3600, slotCount: Self.slotCount, now: Date()
+        )
+        let averages: [Double?] = slots.map { rows in
+            let values = rows.compactMap(value)
+            guard !values.isEmpty else { return nil }
+            return values.reduce(0, +) / Double(values.count)
+        }
+        let present = averages.compactMap { $0 }
+        let range = bounds(for: present)
+
+        VStack(alignment: .leading, spacing: 4) {
+            if present.isEmpty {
+                Text("Collecting. The first day builds up as the app runs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(height: Self.chartHeight, alignment: .center)
+            } else {
+                HStack(alignment: .bottom, spacing: 1) {
+                    ForEach(0..<Self.slotCount, id: \.self) { index in
+                        Rectangle()
+                            .fill(averages[index].map(color) ?? Color.clear)
+                            .frame(height: barHeight(averages[index], in: range))
+                            .frame(maxWidth: .infinity, alignment: .bottom)
+                    }
+                }
+                .frame(height: Self.chartHeight, alignment: .bottom)
+
+                HStack {
+                    Text("24 h ago")
+                    Spacer()
+                    if let peak = present.max() {
+                        Text("peak \(format(peak))")
+                    }
+                    Spacer()
+                    Text("now")
+                }
+                .font(.system(size: 8))
+                .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func bounds(for values: [Double]) -> ClosedRange<Double> {
+        switch scale {
+        case .fixed(let range):
+            return range
+        case .padded:
+            guard let low = values.min(), let high = values.max() else { return 0...1 }
+            // A flat series would otherwise divide by zero and draw
+            // either nothing or full height.
+            guard high - low > 1 else { return (low - 5)...(high + 5) }
+            let padding = (high - low) * 0.2
+            return (low - padding)...(high + padding)
+        }
+    }
+
+    private func barHeight(_ value: Double?, in range: ClosedRange<Double>) -> CGFloat {
+        guard let value else { return 0 }
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 1 }
+        let fraction = (value - range.lowerBound) / span
+        return max(1, Self.chartHeight * min(max(fraction, 0), 1))
     }
 }
 

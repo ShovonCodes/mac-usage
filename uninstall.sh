@@ -45,4 +45,13 @@ fi
 # Saved preferences (silent no-op if none exist).
 defaults delete "$BUNDLE_ID" >/dev/null 2>&1
 
+# The 24 hour history record. Kept outside the defaults domain because
+# it is data rather than settings, so deleting the domain above does
+# not reach it.
+HISTORY_DIR="$HOME/Library/Application Support/MacUsage"
+if [ -d "$HISTORY_DIR" ]; then
+  rm -rf "$HISTORY_DIR"
+  echo "✓ Removed the saved history"
+fi
+
 echo "✓ $APP_NAME is uninstalled."
