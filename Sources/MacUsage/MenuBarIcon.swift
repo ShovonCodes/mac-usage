@@ -1,15 +1,15 @@
 import AppKit
 
 // ─────────────────────────────────────────────────────────────────
-// The custom glyph shown in the menu bar — a small speedometer that
+// The custom glyph shown in the menu bar - a small speedometer that
 // mirrors the app icon: faint full track, bright value arc, needle.
 //
 // It is drawn in code (no image assets), which keeps the plain
-// `swift build` binary self-contained — nothing extra to copy into
+// `swift build` binary self-contained - nothing extra to copy into
 // the app bundle.
 //
 // Menu bar icons are "template images": macOS only looks at the
-// alpha channel and recolors the shape itself — black in a light
+// alpha channel and recolors the shape itself - black in a light
 // menu bar, white in a dark one. That's why everything below is
 // drawn in black; the faint track comes from lower alpha.
 // ─────────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ enum MenuBarIcon {
     /// actual scale, so it is crisp on Retina displays.
     ///
     /// `alerting` adds a red exclamation badge. That needs real color,
-    /// so the image stops being a template — the gauge is then drawn
+    /// so the image stops being a template - the gauge is then drawn
     /// in white/black matching the menu bar's current appearance
     /// (checked at draw time, so theme changes stay correct).
     static func make(pointSize: CGFloat = 24, alerting: Bool = false) -> NSImage {
@@ -38,7 +38,7 @@ enum MenuBarIcon {
             return true
         }
         image.isTemplate = !alerting
-        image.accessibilityDescription = alerting ? "Mac Usage — attention needed" : "Mac Usage"
+        image.accessibilityDescription = alerting ? "Mac Usage: attention needed" : "Mac Usage"
         return image
     }
 
@@ -80,7 +80,7 @@ enum MenuBarIcon {
         let sweepTotalDegrees: CGFloat = 270
         let sweepEndAngle = sweepStartAngle - sweepTotalDegrees // -45° = bottom-right
 
-        // How "full" the gauge reads — same as the app icon.
+        // How "full" the gauge reads - same as the app icon.
         let gaugeFraction: CGFloat = 0.68
         let valueEndAngle = sweepStartAngle - sweepTotalDegrees * gaugeFraction
 

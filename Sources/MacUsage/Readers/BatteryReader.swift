@@ -10,18 +10,18 @@ import IOKit.ps
 //
 // Health ("Maximum Capacity") is trickier: the number System Settings
 // shows is computed by powerd's battery-health model and published in
-// NO public API — every raw registry ratio reads several points
+// NO public API - every raw registry ratio reads several points
 // higher (measured here: Nominal/Design 94%, Raw/Design 91.5%, while
 // Settings said 87%). The only unprivileged way to read powerd's
 // number is `system_profiler SPPowerDataType` (~0.2 s), so that value
 // is fetched off the main thread, cached, and refreshed hourly; the
 // registry ratio serves only as a fallback until the first fetch.
-// Desktops have no battery — isPresent stays false, card hidden.
+// Desktops have no battery - isPresent stays false, card hidden.
 // ─────────────────────────────────────────────────────────────────
 
 final class BatteryReader {
 
-    // powerd health cache — written from a background task, read from
+    // powerd health cache - written from a background task, read from
     // the main thread on every snapshot.
     private let healthLock = NSLock()
     private var cachedHealthPercent: Double = 0
@@ -43,7 +43,7 @@ final class BatteryReader {
         return snapshot
     }
 
-    /// Slow path — spawns system_profiler, so call it off the main
+    /// Slow path - spawns system_profiler, so call it off the main
     /// thread. No-ops unless the cached value has gone stale.
     func refreshHealthFromPowerdIfStale() {
         healthLock.lock()
@@ -128,7 +128,7 @@ final class BatteryReader {
 
         // Fallback health only (powerd's number wins once fetched):
         // the raw measured capacity is closest to Apple's figure.
-        // (Plain "MaxCapacity" here is a percentage on Apple Silicon —
+        // (Plain "MaxCapacity" here is a percentage on Apple Silicon -
         // useless against DesignCapacity.)
         let designCapacity = intProperty("DesignCapacity") ?? 0
         let maxCapacity = intProperty("AppleRawMaxCapacity")

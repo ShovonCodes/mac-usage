@@ -94,18 +94,18 @@ final class StatsStore: ObservableObject {
     @Published private(set) var menuBarTick: UInt64 = 0
 
     // The process list samples with `top`, which costs ~0.5s of CPU
-    // per run — too heavy for every 2s tick, so it gets its own pace.
+    // per run - too heavy for every 2s tick, so it gets its own pace.
     private let memoryDetailsSampleInterval: TimeInterval = 6
     private var lastMemoryDetailsSample = Date.distantPast
 
     // Network info spawns ipconfig and makes a (cached) public-IP
-    // request — slow cadence is plenty.
+    // request - slow cadence is plenty.
     private let networkInfoSampleInterval: TimeInterval = 10
     private var lastNetworkInfoSample = Date.distantPast
     /// CPU usage history for the chart (last 60 ticks).
     private let historyCapacity = 60
     /// Network samples are timestamped and the chart shows a fixed
-    /// five-minute window — keep enough for that even at the fast
+    /// five-minute window - keep enough for that even at the fast
     /// 2-second cadence (200 × 2 s ≈ 6.7 min).
     private let networkHistoryCapacity = 200
     /// Disk throughput is sampled on the slow lane, so far fewer
@@ -159,7 +159,7 @@ final class StatsStore: ObservableObject {
         restartTimers()
     }
 
-    // MARK: Panel open/close — called by the view
+    // MARK: Panel open/close - called by the view
 
     func panelDidOpen() {
         isPanelOpen = true
@@ -269,7 +269,7 @@ final class StatsStore: ObservableObject {
         // History needs the fresh level; its first call also seeds
         // 24h of readings from the power log (~2s), so keep it off
         // the main thread. The same task refreshes the powerd health
-        // number (system_profiler, ~0.2s) — a no-op except hourly.
+        // number (system_profiler, ~0.2s) - a no-op except hourly.
         if battery.isPresent {
             let batteryReader = self.batteryReader
             let batteryHistoryReader = self.batteryHistoryReader
@@ -300,12 +300,12 @@ final class StatsStore: ObservableObject {
                 self?.fans = fanDetails.map { FanReading(id: $0.id, speedRpm: $0.currentRpm) }
                 self?.temperatures = temperatureReadings
                 self?.averageTemperatures = averages
-                self?.evaluateAlerts() // temps arrive late — re-check
+                self?.evaluateAlerts() // temps arrive late - re-check
             }
         }
         evaluateAlerts()
 
-        // CPU process list is one cheap `ps` call — refresh it on every
+        // CPU process list is one cheap `ps` call - refresh it on every
         // tick while the panel is open, off the main thread.
         if isPanelOpen {
             let cpuDetailsReader = self.cpuDetailsReader
@@ -331,7 +331,7 @@ final class StatsStore: ObservableObject {
             }
         }
 
-        // Memory details spawn a `top` sample — only worth doing while
+        // Memory details spawn a `top` sample - only worth doing while
         // someone can see the panel, never on the main thread, and at
         // most every few seconds (see memoryDetailsSampleInterval).
         if isPanelOpen,

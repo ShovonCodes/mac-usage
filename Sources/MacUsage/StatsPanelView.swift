@@ -80,12 +80,12 @@ struct StatsPanelView: View {
 
     /// Which card's detail panel is currently expanded, if any.
     @State private var expandedSection: ExpandableSection?
-    /// The NSView hosting this SwiftUI view — how the detail panel
+    /// The NSView hosting this SwiftUI view - how the detail panel
     /// controller finds the menu bar panel's window to sit beside.
     @State private var hostView: NSView?
     @State private var detailPanelController = DetailPanelController()
 
-    // Which cards the user wants to see — persisted so hidden cards
+    // Which cards the user wants to see - persisted so hidden cards
     // stay hidden across launches.
     @AppStorage("showCpuCard") private var showsCpuCard = true
     @AppStorage("showMemoryCard") private var showsMemoryCard = true
@@ -97,7 +97,7 @@ struct StatsPanelView: View {
 
     /// Card order, stored as comma-separated raw values
     /// ("cpu,memory,..."). Cards missing from the string (added in an
-    /// app update) are appended in default position — see `cardOrder`.
+    /// app update) are appended in default position - see `cardOrder`.
     @AppStorage("cardOrder") private var cardOrderRaw = ""
 
 
@@ -109,7 +109,7 @@ struct StatsPanelView: View {
         .frame(width: 300)
         .background(HostingViewAccessor(view: $hostView))
         // Cards toggling on/off (and the settings page itself) change
-        // the content height — tell the delegate to resize the panel.
+        // the content height - tell the delegate to resize the panel.
         .modifier(SizeReporter { size in
             NotificationCenter.default.post(
                 name: AppDelegate.panelContentSizeChanged,
@@ -123,13 +123,13 @@ struct StatsPanelView: View {
                 return
             }
             // The detail closes only when the pointer leaves both the
-            // main panel and the detail panel — the controller watches
+            // main panel and the detail panel - the controller watches
             // for that, so leaving an individual card never dismisses it.
             detailPanelController.onPointerLeftPanels = { expandedSection = nil }
             showDetail(for: section)
         }
         // The hosting view stays alive between panel opens, so
-        // onDisappear never fires — the delegate tells us instead.
+        // onDisappear never fires - the delegate tells us instead.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
             expandedSection = nil
         }
@@ -179,7 +179,7 @@ struct StatsPanelView: View {
     }
 
 
-    /// Red banner at the top listing every firing threshold alert —
+    /// Red banner at the top listing every firing threshold alert -
     /// the panel-side counterpart of the menu bar badge.
     private var alertBanner: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -301,7 +301,7 @@ struct StatsPanelView: View {
         }
     }
 
-    /// "22% · 52°" — current total CPU + CPU temperature. (Clock speed,
+    /// "22% · 52°" - current total CPU + CPU temperature. (Clock speed,
     /// iStat-style, isn't readable without root on Apple Silicon.)
     private var cpuTitleTrailing: String {
         var parts = ["\(Int(statsStore.cpuUsage.totalBusyPercent))%"]
@@ -359,7 +359,7 @@ struct StatsPanelView: View {
                         color: Theme.pink,
                         fraction: statsStore.battery.healthPercent / 100
                     )],
-                    // %.0f rounds like the detail row does — Int()
+                    // %.0f rounds like the detail row does - Int()
                     // truncation made the two disagree (93 vs 94).
                     label: String(format: "%.0f%%", statsStore.battery.healthPercent),
                     caption: "HEALTH",
@@ -605,7 +605,7 @@ private func memoryGaugeSegments(_ memory: MemoryUsageSnapshot) -> [GaugeSegment
     ]
 }
 
-/// Green when relaxed, orange when strained, red when critical —
+/// Green when relaxed, orange when strained, red when critical -
 /// same thresholds the plain gauges use.
 private func pressureColor(_ percent: Double) -> Color {
     if percent < 50 { return Theme.green }
@@ -753,7 +753,7 @@ struct NetworkDetailColumn: View {
     @EnvironmentObject var statsStore: StatsStore
 
     /// Mirrors the Settings privacy switch: when off, no lookup ever
-    /// runs, so the row would only show "…" — hide it instead.
+    /// runs, so the row would only show "…" - hide it instead.
     @AppStorage("fetchPublicIP") private var fetchesPublicIP = true
 
     var body: some View {
@@ -766,7 +766,7 @@ struct NetworkDetailColumn: View {
                 VStack(alignment: .leading, spacing: 4) {
                     LabeledValueRow(
                         label: "Wi-Fi",
-                        value: statsStore.networkDetails.info.wifiName ?? "—"
+                        value: statsStore.networkDetails.info.wifiName ?? "-"
                     )
                     if fetchesPublicIP {
                         LabeledValueRow(
@@ -796,11 +796,11 @@ struct NetworkDetailColumn: View {
 }
 
 /// Mirrored bar chart: upload grows upward (pink), download grows
-/// downward (blue). Each direction is normalized to its own peak —
+/// downward (blue). Each direction is normalized to its own peak -
 /// download usually dwarfs upload, and a shared scale would flatten
 /// the upload half into invisibility.
 ///
-/// The x-axis is real time, not ticks: 60 buckets of 5 seconds — a
+/// The x-axis is real time, not ticks: 60 buckets of 5 seconds - a
 /// fixed five-minute window no matter how often samples arrive (every
 /// 2 s while the panel is open, every 15 s in the background). Buckets
 /// with no sample render as hairline stubs.
@@ -908,7 +908,7 @@ struct BatteryDetailColumn: View {
                     )
                     LabeledValueRow(
                         label: "Time on battery",
-                        value: statsStore.timeOnBatteryMinutes.map(minutesText) ?? "—"
+                        value: statsStore.timeOnBatteryMinutes.map(minutesText) ?? "-"
                     )
                 }
             }
@@ -934,7 +934,7 @@ struct BatteryDetailColumn: View {
 
 /// One bar per hour, oldest on the left. Bar height = battery level;
 /// hours without any reading render as faint stubs. Hovering a bar
-/// brightens it and swaps the footer for that hour's level — system
+/// brightens it and swaps the footer for that hour's level - system
 /// tooltips are too slow (and flaky in a non-activating panel).
 private struct BatteryHistoryChart: View {
     let points: [BatteryHistoryPoint]
@@ -948,7 +948,7 @@ private struct BatteryHistoryChart: View {
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(points) { point in
                     // The clear backdrop stretches each bar's hover
-                    // target to the chart's full height — the visible
+                    // target to the chart's full height - the visible
                     // capsule alone is a tiny, fiddly target.
                     ZStack(alignment: .bottom) {
                         Color.clear
@@ -1051,7 +1051,7 @@ struct FanDetailColumn: View {
 }
 
 private func rpmText(_ rpm: Double) -> String {
-    rpm < 1 ? "—" : "\(Int(rpm)) RPM"
+    rpm < 1 ? "-" : "\(Int(rpm)) RPM"
 }
 
 /// Current speed as a share of the fan's maximum (0 when unknown).
@@ -1074,7 +1074,7 @@ private func fanColor(_ fan: FanDetailReading) -> Color {
 struct TemperatureDetailColumn: View {
     @EnvironmentObject var statsStore: StatsStore
 
-    /// Grid of chips vs. named sensor rows — remembered across opens.
+    /// Grid of chips vs. named sensor rows - remembered across opens.
     @AppStorage("showsTemperatureSensorNames") private var showsSensorNames = false
 
     var body: some View {
@@ -1127,7 +1127,7 @@ struct TemperatureDetailColumn: View {
 
 /// One category's sensors: a summary line plus either a grid of heat
 /// chips (compact; color carries the story) or one row per sensor
-/// labeled with its SMC key — the hardware's real sensor identity.
+/// labeled with its SMC key - the hardware's real sensor identity.
 private struct TemperatureCategoryCard: View {
     let category: TemperatureCategory
     let readings: [TemperatureReading]
@@ -1652,7 +1652,7 @@ private struct DiskActivityChart: View {
 // Small reusable pieces
 // ─────────────────────────────────────────────────────────────────
 
-/// A rounded card with an uppercase section title — one per stat group.
+/// A rounded card with an uppercase section title - one per stat group.
 /// `titleTrailing` puts a small live value at the title row's right
 /// edge (e.g. the CPU card's "22% · 52°").
 struct StatSectionCard<Content: View>: View {

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Runs a command-line tool and returns its stdout as a string.
-/// Failures just yield "" — readers treat that as "no data this tick".
+/// Failures just yield "" - readers treat that as "no data this tick".
 enum Subprocess {
     static func run(_ executable: String, _ arguments: [String]) -> String {
         let process = Process()

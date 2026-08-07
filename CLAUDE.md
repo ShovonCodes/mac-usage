@@ -9,7 +9,8 @@ MacUsage is a macOS menu bar system monitor (iStat Menus-inspired) written in Sw
 ## Commands
 
 ```bash
-swift build -c release          # build (no tests exist)
+swift build -c release          # build
+./Testing/run.sh                # tests (buckets, history, alerts, card order)
 ./install.sh                    # the dev loop: build → assemble .app → install to /Applications → relaunch
 ./install.sh 2>&1 | grep -E "error|✓"   # quieter variant
 ```
@@ -18,6 +19,7 @@ swift build -c release          # build (no tests exist)
 - To try a build **without** replacing the installed app: `swift build -c release && .build/release/MacUsage &` (second gauge icon appears); kill with `pkill -f '.build/release/MacUsage'`.
 - `open` occasionally fails with LaunchServices error -600 right after a rapid kill/replace. Just retry it.
 - End users install via `curl -fsSL .../bootstrap.sh | bash` (clones to a temp dir, runs install.sh) and remove via `uninstall.sh`. Installer prompts read from `/dev/tty`, not stdin, because stdin carries the piped script.
+- `Testing/run.sh` compiles the **real sources** (not copies) plus `Testing/Tests.swift`, with `@main` stripped from a scratch copy of `MacUsageApp.swift` so the tests own the entry point. There is no SwiftPM test target on purpose: the package is one executable, and splitting it into library + shim just to be testable would complicate the build for everyone. The script deletes its binary before compiling, because otherwise a compile failure silently re-runs the last good build and the suite "passes" without testing anything.
 - Convention in this repo: Claude commits, the user pushes.
 
 ## Architecture

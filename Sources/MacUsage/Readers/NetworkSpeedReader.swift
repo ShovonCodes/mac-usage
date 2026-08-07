@@ -2,7 +2,7 @@ import Foundation
 
 // ─────────────────────────────────────────────────────────────────
 // Reads current network throughput from the kernel's per-interface
-// byte counters (sysctl NET_RT_IFLIST2 — same source netstat uses,
+// byte counters (sysctl NET_RT_IFLIST2 - same source netstat uses,
 // with 64-bit counters that don't wrap). Two consecutive readings
 // give bytes/second, exactly like the CPU reader's tick deltas.
 //
@@ -27,7 +27,7 @@ final class NetworkSpeedReader {
         let seconds = now.timeIntervalSince(previousDate)
         guard seconds > 0.1 else { return NetworkSpeedSnapshot() }
 
-        // Counters can jump backwards if an interface detaches — clamp.
+        // Counters can jump backwards if an interface detaches - clamp.
         let up = totals.up >= previousTotals.up
             ? Double(totals.up - previousTotals.up) / seconds : 0
         let down = totals.down >= previousTotals.down

@@ -3,13 +3,13 @@ import Foundation
 // ─────────────────────────────────────────────────────────────────
 // Collects the process list shown when hovering the Memory card.
 // (The App/Wired/Compressed/Free breakdown lives in the regular
-// MemoryUsageReader — same kernel call as the used/total numbers.)
+// MemoryUsageReader - same kernel call as the used/total numbers.)
 //
 // The list comes from `top -o mem`, whose MEM column is the same
 // "memory footprint" metric Activity Monitor ranks by (it includes
 // each process's compressed pages). Plain `ps` rss can't be used:
 // it only counts pages resident in RAM, so under memory pressure
-// the biggest consumers — mostly compressed — rank near the bottom.
+// the biggest consumers - mostly compressed - rank near the bottom.
 //
 // top truncates command names to ~16 characters, so a follow-up
 // `ps -p` fetches each pid's full executable path (also what the

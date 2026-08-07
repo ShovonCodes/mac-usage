@@ -7,7 +7,7 @@ import Foundation
 // Two sources, merged:
 //   1. A one-time seed from `pmset -g log`, whose sleep/wake/charge
 //     entries carry "Using Batt(Charge: NN%)" / "Using AC(Charge:"
-//     markers — level history AND power-source history from before
+//     markers - level history AND power-source history from before
 //     the app was even running (~2s, done once, off the main thread).
 //   2. Live samples recorded on every refresh tick while the app runs.
 //
@@ -54,7 +54,7 @@ final class BatteryHistoryReader {
         guard let newest = samples.max(by: { $0.key < $1.key }),
               newest.value.isOnBattery else { return nil }
         guard let lastOnAC = samples.filter({ !$0.value.isOnBattery }).keys.max() else {
-            return nil // no AC reading in the window — unknown
+            return nil // no AC reading in the window - unknown
         }
         return Int(now.timeIntervalSince(lastOnAC) / 60)
     }
@@ -68,7 +68,7 @@ final class BatteryHistoryReader {
         lock.unlock()
         guard !alreadySeeded else { return }
 
-        // Filter in the shell — the full log can be tens of MB.
+        // Filter in the shell - the full log can be tens of MB.
         let output = Subprocess.run("/bin/sh", ["-c", "pmset -g log | grep '(Charge:'"])
         let parsed = Self.parsePowerLog(output)
 

@@ -153,7 +153,7 @@ struct FanReading: Identifiable {
 }
 
 /// Everything the SMC knows about one fan (for the hover panel).
-/// Values the SMC doesn't expose stay 0 and render as "—".
+/// Values the SMC doesn't expose stay 0 and render as "-".
 struct FanDetailReading: Identifiable {
     let id: Int              // fan index: 0, 1, ...
     var currentRpm: Double = 0

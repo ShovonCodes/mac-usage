@@ -29,7 +29,7 @@ struct MacUsageApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Posted just before the panel hides so views can clean up
-    /// (collapse hover details) — they never see onDisappear because
+    /// (collapse hover details) - they never see onDisappear because
     /// the hosting view stays alive between opens.
     static let panelWillHide = Notification.Name("MacUsagePanelWillHide")
     /// Posted by the panel content when its size changes (cards being
@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(LoginItemManager.setEnabled(arguments[flagIndex + 1] == "on") ? 0 : 1)
         }
 
-        // Hide the Dock icon — this app lives only in the menu bar.
+        // Hide the Dock icon - this app lives only in the menu bar.
         NSApp.setActivationPolicy(.accessory)
 
         // Variable, not square: the strip's width depends on which
@@ -207,7 +207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let screen = buttonWindow.screen ?? NSScreen.main else { return }
 
         // Size to the current content, center under the icon, clamp
-        // to the screen — all before the panel becomes visible.
+        // to the screen - all before the panel becomes visible.
         let size = hostingView.fittingSize
         let iconFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
 

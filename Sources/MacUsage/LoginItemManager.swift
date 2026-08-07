@@ -3,12 +3,12 @@ import ServiceManagement
 
 // ─────────────────────────────────────────────────────────────────
 // Start-at-login via SMAppService (the modern macOS 13+ login-item
-// API — no AppleScript, no permission prompts, and the entry shows
+// API - no AppleScript, no permission prompts, and the entry shows
 // up in System Settings → General → Login Items like any other app).
 //
 // Everything goes through here: the Settings switch in the panel,
 // and the install/uninstall scripts via the app's `--set-login`
-// launch flag — SMAppService only lets an app register its own
+// launch flag - SMAppService only lets an app register its own
 // bundle, so scripts can't do it directly.
 // ─────────────────────────────────────────────────────────────────
 

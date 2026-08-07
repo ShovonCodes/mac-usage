@@ -20,7 +20,7 @@ final class DetailPanelController {
     private var ticksOutsideBothPanels = 0
 
     /// Called when the pointer has left both the main panel and the
-    /// detail panel — the view collapses the detail in response.
+    /// detail panel - the view collapses the detail in response.
     var onPointerLeftPanels: (() -> Void)?
 
     /// Horizontal gap between the main panel and the detail panel.
@@ -79,7 +79,7 @@ final class DetailPanelController {
 
     /// The detail stays open while the pointer is anywhere inside the
     /// main panel or the detail panel (plus a small corridor between
-    /// them) — hover-exit events on individual cards can't dismiss it
+    /// them) - hover-exit events on individual cards can't dismiss it
     /// mid-travel. Two consecutive misses (~0.3s) close it.
     private func startWatchingPointer() {
         ticksOutsideBothPanels = 0

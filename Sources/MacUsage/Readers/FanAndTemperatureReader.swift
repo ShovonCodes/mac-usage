@@ -27,7 +27,7 @@ final class FanAndTemperatureReader {
         guard smc.isOpen else { return [] }
 
         guard let fanCount = smc.readNumericValue(forKey: "FNum"), fanCount > 0 else {
-            return [] // e.g. MacBook Air — it has no fan at all
+            return [] // e.g. MacBook Air - it has no fan at all
         }
 
         var fans: [FanReading] = []
@@ -86,7 +86,7 @@ final class FanAndTemperatureReader {
         return readings
     }
 
-    /// Average temperature per category — handy for a compact display.
+    /// Average temperature per category - handy for a compact display.
     /// e.g. Apple Silicon Macs expose 10+ CPU sensors; showing the average
     /// of them matches what most monitoring apps display.
     func readAverageTemperaturesByCategory() -> [TemperatureCategory: Double] {
@@ -145,7 +145,7 @@ final class FanAndTemperatureReader {
         if keyName.hasPrefix("TB") {
             return .battery
         }
-        // Every other "T" key (SSD, airflow, palm rest, ...) — we skip these
+        // Every other "T" key (SSD, airflow, palm rest, ...) - we skip these
         // for now to keep the panel minimal. To show them later, return
         // .other here instead of nil and render the extra section in the UI.
         return nil

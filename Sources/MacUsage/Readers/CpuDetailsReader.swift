@@ -4,7 +4,7 @@ import Foundation
 // Collects the process list shown when hovering the CPU card.
 //
 // `ps -Aro pid=,pcpu=,comm=` lists every process sorted by CPU.
-// pcpu is the kernel's decaying-average CPU% — instant to read
+// pcpu is the kernel's decaying-average CPU% - instant to read
 // (unlike `top`, which needs a ~1s sampling window), close to what
 // Activity Monitor shows, and it includes full executable paths.
 // ─────────────────────────────────────────────────────────────────

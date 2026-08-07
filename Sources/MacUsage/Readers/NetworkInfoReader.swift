@@ -11,7 +11,7 @@ import CoreWLAN
 //
 // Public IP: one HTTPS request to api.ipify.org, cached for 10
 // minutes, and only ever made while the panel is open. This is the
-// app's only network request — and the "Fetch public IP" switch in
+// app's only network request - and the "Fetch public IP" switch in
 // Settings turns it off entirely.
 // ─────────────────────────────────────────────────────────────────
 

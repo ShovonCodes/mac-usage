@@ -78,7 +78,7 @@ final class SmcConnection {
         case getKeyInfo = 9
     }
 
-    /// Selector for IOConnectCallStructMethod — always 2 for AppleSMC.
+    /// Selector for IOConnectCallStructMethod - always 2 for AppleSMC.
     private let kernelCallSelector: UInt32 = 2
 
     private var connectionPort: io_connect_t = 0
@@ -227,10 +227,10 @@ final class SmcConnection {
 
     /// Convert the raw bytes into a Double based on the SMC data type.
     /// Different Macs use different encodings for the same kind of sensor:
-    ///   "flt " — plain 32-bit float (Apple Silicon)
-    ///   "fpe2" — big-endian fixed point, value = raw / 4 (Intel fans)
-    ///   "sp78" — big-endian signed fixed point, value = raw / 256 (Intel temps)
-    ///   "ui8 " / "ui16" / "ui32" — plain unsigned integers
+    ///   "flt " - plain 32-bit float (Apple Silicon)
+    ///   "fpe2" - big-endian fixed point, value = raw / 4 (Intel fans)
+    ///   "sp78" - big-endian signed fixed point, value = raw / 256 (Intel temps)
+    ///   "ui8 " / "ui16" / "ui32" - plain unsigned integers
     static func decodeNumericValue(bytes: SmcDataBytes, dataSize: UInt32, dataType: UInt32) -> Double? {
         let typeName = keyName(from: dataType)
         let byteArray = [
