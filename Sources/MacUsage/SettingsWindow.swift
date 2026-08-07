@@ -103,6 +103,8 @@ struct SettingsView: View {
                 .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
             CardsSettingsView()
                 .tabItem { Label("Cards", systemImage: "rectangle.stack") }
+            AlertsSettingsView()
+                .tabItem { Label("Alerts", systemImage: "bell") }
         }
         .padding(.top, 8)
     }
@@ -224,6 +226,78 @@ private struct MenuBarSettingsView: View {
         case .memory: return $showsMemory
         case .network: return $showsNetwork
         case .temperature: return $showsTemperature
+        }
+    }
+}
+
+// MARK: Alerts
+
+private struct AlertsSettingsView: View {
+    @AppStorage("alertNotificationsEnabled") private var notificationsEnabled = true
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(AlertRule.allCases) { rule in
+                    AlertRuleRow(rule: rule)
+                }
+            } header: {
+                Text("Warn me when")
+            } footer: {
+                Text("A warning clears only once the reading recovers past its "
+                     + "threshold by a margin, so a value sitting on the line "
+                     + "does not flicker.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Send notifications", isOn: $notificationsEnabled)
+                    .onChange(of: notificationsEnabled) { isOn in
+                        // Ask right after they opt in, rather than
+                        // ambushing them later when a threshold trips.
+                        if isOn { AlertNotifier.requestAuthorization() }
+                    }
+            } footer: {
+                Text("The menu bar badge and the panel always show warnings. "
+                     + "Notifications also reach you in fullscreen, where the "
+                     + "menu bar is hidden.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// One rule: on/off, and the number it triggers at.
+///
+/// The number is a real text field, which is the reason Settings had
+/// to become a window at all: the stats panel is a non-activating
+/// NSPanel and can never take keyboard focus.
+private struct AlertRuleRow: View {
+    let rule: AlertRule
+
+    @AppStorage private var isEnabled: Bool
+    @AppStorage private var threshold: Double
+
+    init(rule: AlertRule) {
+        self.rule = rule
+        _isEnabled = AppStorage(wrappedValue: true, rule.enabledKey)
+        _threshold = AppStorage(wrappedValue: rule.defaultThreshold, rule.thresholdKey)
+    }
+
+    var body: some View {
+        HStack {
+            Toggle(rule.title, isOn: $isEnabled)
+            Spacer(minLength: 12)
+            TextField("", value: $threshold, format: .number.precision(.fractionLength(0)))
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 52)
+                .disabled(!isEnabled)
+            Text(rule.unit)
+                .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .leading)
         }
     }
 }

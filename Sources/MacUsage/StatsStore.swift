@@ -112,20 +112,7 @@ final class StatsStore: ObservableObject {
     /// points cover the same span as the network chart.
     private let diskHistoryCapacity = 60
 
-    /// When any stat crosses these, an alert fires.
-    private struct AlertThresholds {
-        var cpuBusyPercent: Double
-        var memoryPressurePercent: Double
-        var cpuTemperatureCelsius: Double
-        var batteryLowPercent: Double
-    }
-
-    private let alertThresholds = AlertThresholds(
-        cpuBusyPercent: 90,
-        memoryPressurePercent: 80,
-        cpuTemperatureCelsius: 90,
-        batteryLowPercent: 10
-    )
+    private let alertEngine = AlertEngine()
 
     init() {
         // Take a first sample right away so the first panel open isn't empty.
@@ -363,38 +350,21 @@ final class StatsStore: ObservableObject {
     // MARK: Threshold alerts
 
     private func evaluateAlerts() {
-        var alerts: [StatAlert] = []
+        let reading = AlertReading(
+            cpuBusyPercent: cpuUsage.totalBusyPercent,
+            memoryPressurePercent: memoryUsage.pressurePercent,
+            cpuTemperatureCelsius: averageTemperatures[.cpu],
+            batteryPercent: battery.levelPercent,
+            batteryIsPresent: battery.isPresent,
+            batteryIsDischarging: !battery.isPluggedIn
+        )
+        let result = alertEngine.evaluate(reading, settings: AlertSettings.fromDefaults())
 
-        if cpuUsage.totalBusyPercent > alertThresholds.cpuBusyPercent {
-            alerts.append(StatAlert(
-                id: "cpu",
-                message: String(format: "CPU at %.0f%%", cpuUsage.totalBusyPercent)
-            ))
-        }
-        if memoryUsage.pressurePercent > alertThresholds.memoryPressurePercent {
-            alerts.append(StatAlert(
-                id: "memory",
-                message: String(format: "Memory pressure at %.0f%%", memoryUsage.pressurePercent)
-            ))
-        }
-        if let cpuTemperature = averageTemperatures[.cpu],
-           cpuTemperature > alertThresholds.cpuTemperatureCelsius {
-            alerts.append(StatAlert(
-                id: "temperature",
-                message: String(format: "CPU temperature at %.0f°", cpuTemperature)
-            ))
-        }
-        if battery.isPresent, !battery.isPluggedIn,
-           battery.levelPercent < alertThresholds.batteryLowPercent {
-            alerts.append(StatAlert(
-                id: "battery",
-                message: String(format: "Battery at %.0f%%", battery.levelPercent)
-            ))
-        }
+        AlertNotifier.post(result.toNotify)
 
-        // Publish only on change — the menu bar icon redraws on this.
-        if alerts != activeAlerts {
-            activeAlerts = alerts
+        // Publish only on change: the menu bar icon redraws on this.
+        if result.firing != activeAlerts {
+            activeAlerts = result.firing
         }
     }
 }

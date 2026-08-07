@@ -52,9 +52,12 @@ Hover any card for the full story.
   `~/Library/Application Support/MacUsage`, removed by `uninstall.sh`.
 - **🌀 Fans**: live RPM with each fan's min/max range (fanless Macs
   correctly report "No fans detected").
-- **🚨 Threshold alerts**: the menu bar icon grows a red badge when CPU
-  passes 90%, memory pressure 80%, CPU temperature 90°, or battery drops
-  below 10% while discharging; the panel explains why.
+- **🚨 Threshold alerts**: the menu bar icon grows a red badge and the
+  panel explains why. Every threshold is editable, and alerts can also
+  arrive as notifications, the only channel that still reaches you in
+  fullscreen where the menu bar is hidden. A warning clears only once
+  the reading recovers past its threshold by a margin, so a value
+  parked on the line does not flicker.
 - **📟 Menu bar readouts**: a live CPU graph, memory percentage and
   network rates sit next to the icon, so the common checks need no
   click at all. Each one can be switched off to give the width back,
