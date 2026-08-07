@@ -374,7 +374,15 @@ struct StatsPanelView: View {
 
     private var networkSection: some View {
         StatSectionCard(title: "Network") {
-            HStack {
+            VStack(spacing: 6) {
+                NetworkSparkline(points: statsStore.networkHistory)
+                networkSpeeds
+            }
+        }
+    }
+
+    private var networkSpeeds: some View {
+        HStack {
                 Spacer()
                 VStack(spacing: 2) {
                     Text(speedText(statsStore.networkSpeed.uploadBytesPerSecond))
@@ -388,7 +396,6 @@ struct StatsPanelView: View {
                     DirectionLabel(color: networkDownloadColor, text: "↓ Download")
                 }
                 Spacer()
-            }
         }
     }
 
@@ -520,28 +527,64 @@ private let cpuSystemColor: Color = Theme.pink
 struct CpuHistoryChart: View {
     let points: [CpuHistoryPoint]
 
-    private static let capacity = 60
+    /// Fixed two-minute window, one slot per two seconds. Bars are
+    /// placed by timestamp, not by position in the buffer, so a
+    /// stretch sampled slowly (panel closed, strip off) draws as the
+    /// gap it really was instead of being stretched to fill the
+    /// chart. The buffer can hold up to 15 minutes of slow samples;
+    /// anything older than the window simply falls outside it.
+    private static let windowSeconds: TimeInterval = 120
+    private static let slotCount = 60
     private static let chartHeight: CGFloat = 40
 
     var body: some View {
-        let missing = max(0, Self.capacity - points.count)
-        let padded: [CpuHistoryPoint?] =
-            Array(repeating: nil, count: missing) + points.suffix(Self.capacity).map { $0 }
+        let slots = TimeBuckets.slots(
+            points, timestamp: \.id,
+            window: Self.windowSeconds, slotCount: Self.slotCount, now: Date()
+        )
+        let user = TimeBuckets.averaged(slots) { $0.userPercent }
+        let system = TimeBuckets.averaged(slots) { $0.systemPercent }
 
-        HStack(alignment: .bottom, spacing: 1) {
-            ForEach(Array(padded.enumerated()), id: \.offset) { _, point in
+        VStack(spacing: 3) {
+            ZStack(alignment: .bottom) {
+                // A single reference line at 50%. Without it a spike
+                // has no scale: the bars could be 30% or 90% and look
+                // identical.
                 VStack(spacing: 0) {
                     Rectangle()
-                        .fill(cpuSystemColor)
-                        .frame(height: barHeight(point?.systemPercent))
-                    Rectangle()
-                        .fill(cpuUserColor)
-                        .frame(height: barHeight(point?.userPercent))
+                        .fill(Color(nsColor: .separatorColor))
+                        .frame(height: 1)
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(height: Self.chartHeight / 2)
+
+                HStack(alignment: .bottom, spacing: 1) {
+                    ForEach(0..<Self.slotCount, id: \.self) { index in
+                        VStack(spacing: 0) {
+                            Rectangle()
+                                .fill(cpuSystemColor)
+                                .frame(height: barHeight(system[index]))
+                            Rectangle()
+                                .fill(cpuUserColor)
+                                .frame(height: barHeight(user[index]))
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: Self.chartHeight, alignment: .bottom)
             }
+            .frame(height: Self.chartHeight)
+
+            HStack {
+                Text("2 min ago")
+                Spacer()
+                Text("50% line")
+                Spacer()
+                Text("now")
+            }
+            .font(.system(size: 8))
+            .foregroundStyle(.tertiary)
         }
-        .frame(height: Self.chartHeight, alignment: .bottom)
     }
 
     private func barHeight(_ percent: Double?) -> CGFloat {
@@ -1329,6 +1372,61 @@ private struct ProcessRow: View {
             return NSWorkspace.shared.icon(forFile: String(path[..<appRange.lowerBound]) + ".app")
         }
         return NSWorkspace.shared.icon(forFile: path)
+    }
+}
+
+/// A compact mirrored throughput chart for the main Network card:
+/// download above the centre line, upload below. The CPU card has
+/// carried a live chart from the start while Network showed two bare
+/// numbers, even though the history was already being collected.
+struct NetworkSparkline: View {
+    let points: [NetworkHistoryPoint]
+
+    private static let windowSeconds: TimeInterval = 120
+    private static let slotCount = 60
+    private static let halfHeight: CGFloat = 13
+
+    var body: some View {
+        let slots = TimeBuckets.slots(
+            points, timestamp: \.id,
+            window: Self.windowSeconds, slotCount: Self.slotCount, now: Date()
+        )
+        let download = TimeBuckets.averaged(slots) { $0.downloadBytesPerSecond }
+        let upload = TimeBuckets.averaged(slots) { $0.uploadBytesPerSecond }
+        // Both directions share one scale, so the halves stay
+        // comparable: a tall upload bar really is more traffic than a
+        // short download one.
+        let peak = max(
+            download.compactMap { $0 }.max() ?? 0,
+            upload.compactMap { $0 }.max() ?? 0,
+            1
+        )
+
+        VStack(spacing: 1) {
+            HStack(alignment: .bottom, spacing: 1) {
+                ForEach(0..<Self.slotCount, id: \.self) { index in
+                    Capsule()
+                        .fill(networkDownloadColor)
+                        .frame(height: barHeight(download[index], peak: peak))
+                        .frame(maxWidth: .infinity, alignment: .bottom)
+                }
+            }
+            .frame(height: Self.halfHeight, alignment: .bottom)
+            HStack(alignment: .top, spacing: 1) {
+                ForEach(0..<Self.slotCount, id: \.self) { index in
+                    Capsule()
+                        .fill(networkUploadColor)
+                        .frame(height: barHeight(upload[index], peak: peak))
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+            }
+            .frame(height: Self.halfHeight, alignment: .top)
+        }
+    }
+
+    private func barHeight(_ value: Double?, peak: Double) -> CGFloat {
+        guard let value, value > 0 else { return 1 }
+        return max(1, Self.halfHeight * value / peak)
     }
 }
 

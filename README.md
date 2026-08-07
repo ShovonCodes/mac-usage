@@ -35,8 +35,9 @@ Hover any card for the full story.
 - **🔋 Battery**: level ring with time remaining, health ring. Hover: a
   24-hour level history (hover a bar for that hour), charge details,
   max capacity, and cycle count.
-- **🌐 Network**: live upload/download. Hover: a five-minute activity
-  chart with per-direction peaks, Wi-Fi name, local and public IPs.
+- **🌐 Network**: live upload/download with a two-minute activity
+  sparkline. Hover: a five-minute chart with per-direction peaks,
+  Wi-Fi name, local and public IPs.
 - **💽 Disk**: how full the boot volume is, with live read and write
   rates. Hover: used/free/total and a throughput chart. Mounted disk
   images are excluded, so opening a .dmg does not read as disk activity.
