@@ -18,8 +18,11 @@ struct MacUsageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // All real UI lives in the status item panel the delegate owns.
-        Settings { EmptyView() }
+        // The stats themselves live in the status item panel the
+        // delegate owns. Settings is the one piece of regular window
+        // UI: it needs keyboard focus and working system controls,
+        // neither of which a non-activating panel can offer.
+        Settings { SettingsView() }
     }
 }
 
@@ -41,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clickOutsideMonitor: Any?
     private var alertSubscription: AnyCancellable?
     private var contentSizeSubscription: AnyCancellable?
+    private var openSettingsSubscription: AnyCancellable?
 
     /// Gap between the menu bar and the top of the panel.
     private let menuBarGap: CGFloat = 5
@@ -78,6 +82,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] notification in
                 guard let value = notification.userInfo?["size"] as? NSValue else { return }
                 Task { @MainActor in self?.resizePanel(to: value.sizeValue) }
+            }
+
+        // The panel's gear button asks for Settings. The panel has to
+        // close first: opening a real window activates the app, and
+        // the click-outside monitor never sees that click (it only
+        // fires for events routed to *other* applications), so the
+        // panel would otherwise hang around behind the window.
+        openSettingsSubscription = NotificationCenter.default
+            .publisher(for: SettingsWindow.openRequested)
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.hidePanel()
+                    SettingsWindow.open()
+                }
             }
 
         // Swap the icon to the red-badged attention glyph whenever any

@@ -30,6 +30,26 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
         case .fans: return "Fans"
         }
     }
+
+    /// Parse the persisted "cpu,memory,..." order string.
+    ///
+    /// Unknown entries are dropped and missing cards appended, so the
+    /// result always covers every card exactly once no matter what the
+    /// stored string says. That is what makes a card added in a later
+    /// version appear for people who already have an order saved.
+    static func order(from raw: String) -> [ExpandableSection] {
+        var order = raw.split(separator: ",")
+            .compactMap { ExpandableSection(rawValue: String($0)) }
+        var seen = Set<ExpandableSection>()
+        order = order.filter { seen.insert($0).inserted }
+        order.append(contentsOf: allCases.filter { !seen.contains($0) })
+        return order
+    }
+
+    /// The inverse of `order(from:)`, for writing the setting back.
+    static func rawValue(for order: [ExpandableSection]) -> String {
+        order.map(\.rawValue).joined(separator: ",")
+    }
 }
 
 
@@ -57,27 +77,10 @@ struct StatsPanelView: View {
     /// app update) are appended in default position — see `cardOrder`.
     @AppStorage("cardOrder") private var cardOrderRaw = ""
 
-    @AppStorage("fetchPublicIP") private var fetchesPublicIP = true
-    /// Mirrors SMAppService's registration state; refreshed every time
-    /// the settings page appears (the system, not us, owns this state).
-    @State private var launchesAtLogin = false
-
-    @State private var isShowingSettings = false
-    /// The card row currently being drag-reordered in Settings.
-    @State private var draggedCard: ExpandableSection?
-    @State private var draggedCardStartIndex = 0
-    @State private var dragTranslation: CGFloat = 0
-    /// The slot the dragged card would land in if released now. State
-    /// (not derived from the translation) so it can carry hysteresis.
-    @State private var dragTargetIndex = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if isShowingSettings {
-                settingsContent
-            } else {
-                statsContent
-            }
+            statsContent
         }
         .padding(12)
         .frame(width: 300)
@@ -106,7 +109,6 @@ struct StatsPanelView: View {
         // onDisappear never fires — the delegate tells us instead.
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.panelWillHide)) { _ in
             expandedSection = nil
-            isShowingSettings = false
         }
     }
 
@@ -124,16 +126,8 @@ struct StatsPanelView: View {
         bottomBar
     }
 
-    /// The user's card order. Unknown entries are dropped and missing
-    /// cards appended, so the result always covers every card exactly
-    /// once no matter what the stored string says.
     private var cardOrder: [ExpandableSection] {
-        var order = cardOrderRaw.split(separator: ",")
-            .compactMap { ExpandableSection(rawValue: String($0)) }
-        var seen = Set<ExpandableSection>()
-        order = order.filter { seen.insert($0).inserted }
-        order.append(contentsOf: ExpandableSection.allCases.filter { !seen.contains($0) })
-        return order
+        ExpandableSection.order(from: cardOrderRaw)
     }
 
     private func isCardVisible(_ section: ExpandableSection) -> Bool {
@@ -159,170 +153,6 @@ struct StatsPanelView: View {
         }
     }
 
-    // MARK: Settings
-
-    @ViewBuilder
-    private var settingsContent: some View {
-        HStack(spacing: 6) {
-            Button {
-                isShowingSettings = false
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.caption.weight(.semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            Text("Settings")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        StatSectionCard(title: "General") {
-            VStack(alignment: .leading, spacing: 6) {
-                settingToggle("Launch at login", isOn: launchAtLoginBinding)
-                settingToggle("Fetch public IP", isOn: $fetchesPublicIP)
-            }
-        }
-        .onAppear { launchesAtLogin = LoginItemManager.isEnabled }
-        StatSectionCard(title: "Cards", titleTrailing: "drag to reorder") {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(cardOrder) { section in
-                    cardSettingRow(section)
-                }
-            }
-        }
-    }
-
-    /// Talks to SMAppService immediately on toggle; the switch only
-    /// moves if macOS accepted the change (it refuses when the binary
-    /// runs outside an app bundle during development).
-    private var launchAtLoginBinding: Binding<Bool> {
-        Binding(
-            get: { launchesAtLogin },
-            set: { enabled in
-                if LoginItemManager.setEnabled(enabled) {
-                    launchesAtLogin = enabled
-                }
-            }
-        )
-    }
-
-    private func settingToggle(_ label: String, isOn: Binding<Bool>) -> some View {
-        HStack {
-            Text(label)
-                .font(.callout)
-            Spacer()
-            SettingSwitch(isOn: isOn)
-        }
-    }
-
-    // MARK: Card reordering
-
-    /// Fixed row height so the drag gesture can translate a vertical
-    /// distance directly into "how many rows did I move".
-    private static let cardRowHeight: CGFloat = 28
-
-    /// One row of the Cards list: grip + name (the draggable area) and
-    /// the visibility switch. While a drag is in flight the rows only
-    /// move visually (offsets); the order is committed on release.
-    private func cardSettingRow(_ section: ExpandableSection) -> some View {
-        let offset = rowDragOffset(for: section)
-        return HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Text(section.displayName)
-                    .font(.callout)
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-            .gesture(cardDragGesture(for: section))
-            SettingSwitch(isOn: visibilityBinding(for: section))
-        }
-        .frame(height: Self.cardRowHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(Color.gray.opacity(draggedCard == section ? 0.2 : 0))
-        )
-        .offset(y: offset)
-        // The dragged row rides above the ones it passes.
-        .zIndex(draggedCard == section ? 1 : 0)
-        // Bystander rows slide aside smoothly; the dragged row must
-        // track the pointer raw — animating it would add lag.
-        .animation(draggedCard == section ? nil : .easeInOut(duration: 0.15), value: offset)
-    }
-
-    /// Visual-only displacement while dragging: the dragged row follows
-    /// the pointer (clamped to the list), and rows between its start
-    /// and target slots step aside by one row height. Nothing here
-    /// touches the stored order — that happens once, on drag end.
-    private func rowDragOffset(for section: ExpandableSection) -> CGFloat {
-        guard let draggedCard, let index = cardOrder.firstIndex(of: section) else { return 0 }
-        let start = draggedCardStartIndex
-        let target = dragTargetIndex
-        if section == draggedCard {
-            let lowest = CGFloat(-start) * Self.cardRowHeight
-            let highest = CGFloat(cardOrder.count - 1 - start) * Self.cardRowHeight
-            return min(max(dragTranslation, lowest), highest)
-        }
-        if start < target, index > start, index <= target { return -Self.cardRowHeight }
-        if target < start, index >= target, index < start { return Self.cardRowHeight }
-        return 0
-    }
-
-    /// A plain mouse-delta gesture (not system drag-and-drop) because
-    /// this panel is a non-activating window, where drag sessions are
-    /// unreliable.
-    private func cardDragGesture(for section: ExpandableSection) -> some Gesture {
-        DragGesture(minimumDistance: 4)
-            .onChanged { value in
-                if draggedCard != section {
-                    draggedCard = section
-                    draggedCardStartIndex = cardOrder.firstIndex(of: section) ?? 0
-                    dragTargetIndex = draggedCardStartIndex
-                }
-                dragTranslation = value.translation.height
-
-                // Hysteresis: the pointer must travel clearly past a
-                // slot's midpoint (0.65 rows, not 0.5) to adopt it —
-                // otherwise hand jitter right at a boundary makes the
-                // neighboring row oscillate.
-                let rows = dragTranslation / Self.cardRowHeight
-                let proposed = max(0, min(cardOrder.count - 1,
-                                          draggedCardStartIndex + Int(rows.rounded())))
-                let currentRows = CGFloat(dragTargetIndex - draggedCardStartIndex)
-                if proposed != dragTargetIndex, abs(rows - currentRows) > 0.65 {
-                    dragTargetIndex = proposed
-                }
-            }
-            .onEnded { _ in
-                var order = cardOrder
-                let targetIndex = dragTargetIndex
-                if let currentIndex = order.firstIndex(of: section), targetIndex != currentIndex {
-                    order.remove(at: currentIndex)
-                    order.insert(section, at: targetIndex)
-                }
-                // One commit: offsets reset in the same animation the
-                // reordered rows settle in, so nothing jumps.
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    draggedCard = nil
-                    dragTranslation = 0
-                    cardOrderRaw = order.map(\.rawValue).joined(separator: ",")
-                }
-            }
-    }
-
-    private func visibilityBinding(for section: ExpandableSection) -> Binding<Bool> {
-        switch section {
-        case .cpu: return $showsCpuCard
-        case .memory: return $showsMemoryCard
-        case .battery: return $showsBatteryCard
-        case .network: return $showsNetworkCard
-        case .temperature: return $showsTemperatureCard
-        case .fans: return $showsFansCard
-        }
-    }
 
     /// Red banner at the top listing every firing threshold alert —
     /// the panel-side counterpart of the menu bar badge.
@@ -584,7 +414,9 @@ struct StatsPanelView: View {
                 .foregroundStyle(.tertiary)
             Spacer()
             Button {
-                isShowingSettings = true
+                NotificationCenter.default.post(
+                    name: SettingsWindow.openRequested, object: nil
+                )
             } label: {
                 Image(systemName: "gearshape")
                     .font(.caption)
@@ -777,31 +609,6 @@ struct MemoryDetailColumn: View {
         }
     }
 
-}
-
-/// Hand-drawn switch: the system one renders gray in this panel
-/// (a non-activating window never looks "active" to AppKit), which
-/// made on and off nearly indistinguishable. This one keeps a
-/// colored track no matter the window state.
-struct SettingSwitch: View {
-    @Binding var isOn: Bool
-
-    var body: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) { isOn.toggle() }
-        } label: {
-            ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(isOn ? Color.accentColor : Color.gray.opacity(0.4))
-                Circle()
-                    .fill(.white)
-                    .padding(2)
-                    .shadow(color: .black.opacity(0.25), radius: 0.8, y: 0.5)
-            }
-            .frame(width: 34, height: 20)
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 /// The small uppercase title at the top of every hover detail column.

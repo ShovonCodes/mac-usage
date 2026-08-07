@@ -55,10 +55,23 @@ final class StatsStore: ObservableObject {
     private let networkInfoReader = NetworkInfoReader()
     private let sensorReader = FanAndTemperatureReader()
 
-    // Refresh timing.
-    private let refreshIntervalWhenPanelOpen: TimeInterval = 2
-    private let refreshIntervalWhenIdle: TimeInterval = 15
-    private var refreshTimer: Timer?
+    // Refresh timing, split into two lanes.
+    //
+    // The fast lane is only ever three in-process syscalls
+    // (host_processor_info, sysctlbyname, NET_RT_IFLIST2), so it can
+    // run often for almost nothing. The slow lane is everything that
+    // talks to the SMC or spawns a subprocess, and must not.
+    //
+    // Today both lanes use the same cadence, so this is a pure
+    // restructuring. It exists so the menu bar strip can later keep
+    // the fast lane at 2s while the panel is closed, without dragging
+    // the SMC along with it.
+    private let fastIntervalWhenPanelOpen: TimeInterval = 2
+    private let fastIntervalWhenIdle: TimeInterval = 15
+    private let slowIntervalWhenPanelOpen: TimeInterval = 2
+    private let slowIntervalWhenIdle: TimeInterval = 15
+    private var fastTimer: Timer?
+    private var slowTimer: Timer?
     private var isPanelOpen = false
 
     // The process list samples with `top`, which costs ~0.5s of CPU
@@ -95,40 +108,52 @@ final class StatsStore: ObservableObject {
     init() {
         // Take a first sample right away so the first panel open isn't empty.
         // (CPU % needs two samples to show a real number; this is sample #1.)
-        refreshAllStats()
-        startTimer(interval: refreshIntervalWhenIdle)
+        refreshFastStats()
+        refreshSlowStats()
+        restartTimers()
     }
 
     // MARK: Panel open/close — called by the view
 
     func panelDidOpen() {
         isPanelOpen = true
-        refreshAllStats() // show fresh numbers immediately
-        startTimer(interval: refreshIntervalWhenPanelOpen)
+        // Show fresh numbers immediately.
+        refreshFastStats()
+        refreshSlowStats()
+        restartTimers()
     }
 
     func panelDidClose() {
         isPanelOpen = false
-        startTimer(interval: refreshIntervalWhenIdle)
+        restartTimers()
     }
 
     // MARK: Refreshing
 
-    private func startTimer(interval: TimeInterval) {
-        refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshAllStats()
-            }
+    private func restartTimers() {
+        fastTimer?.invalidate()
+        fastTimer = Timer.scheduledTimer(
+            withTimeInterval: isPanelOpen ? fastIntervalWhenPanelOpen : fastIntervalWhenIdle,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshFastStats() }
+        }
+
+        slowTimer?.invalidate()
+        slowTimer = Timer.scheduledTimer(
+            withTimeInterval: isPanelOpen ? slowIntervalWhenPanelOpen : slowIntervalWhenIdle,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshSlowStats() }
         }
     }
 
-    private func refreshAllStats() {
-        // CPU, memory, battery and network speed are cheap — read them
-        // on the main thread.
+    /// The fast lane: three syscalls plus their history buffers.
+    /// Cheap enough for the main thread, and the only thing the menu
+    /// bar strip will need.
+    private func refreshFastStats() {
         cpuUsage = cpuReader.readCurrentUsage()
         memoryUsage = memoryReader.readCurrentUsage()
-        battery = batteryReader.readSnapshot()
 
         cpuHistory.append(CpuHistoryPoint(
             id: Date(),
@@ -148,6 +173,15 @@ final class StatsStore: ObservableObject {
         if networkHistory.count > networkHistoryCapacity {
             networkHistory.removeFirst(networkHistory.count - networkHistoryCapacity)
         }
+
+        evaluateAlerts()
+    }
+
+    /// The slow lane: anything touching the SMC, a subprocess, or the
+    /// network. Several of these carry their own extra gating on top
+    /// of the timer (see the sample-interval properties above).
+    private func refreshSlowStats() {
+        battery = batteryReader.readSnapshot()
 
         // History needs the fresh level; its first call also seeds
         // 24h of readings from the power log (~2s), so keep it off
