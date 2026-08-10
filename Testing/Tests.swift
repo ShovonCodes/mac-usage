@@ -438,6 +438,53 @@ MainActor.assumeIsolated {
           "got \(one.firing.map(\.id))")
 }
 
+section("MenuBarSegment: defaults and lane")
+do {
+    check("only CPU, memory and network start on",
+          Set(MenuBarSegment.allCases.filter(\.isOnByDefault)) == [.cpu, .memory, .network],
+          "got \(MenuBarSegment.allCases.filter(\.isOnByDefault).map(\.rawValue))")
+    check("sensor readings are the slow-lane ones",
+          Set(MenuBarSegment.allCases.filter(\.isFedBySlowLane)) == [.gpu, .power, .temperature],
+          "got \(MenuBarSegment.allCases.filter(\.isFedBySlowLane).map(\.rawValue))")
+    // A shared key would make one switch silently move another.
+    check("every segment has its own defaults key",
+          Set(MenuBarSegment.allCases.map(\.defaultsKey)).count == MenuBarSegment.allCases.count)
+    check("no segment key collides with the strip's own",
+          !MenuBarSegment.allCases.map(\.defaultsKey).contains(MenuBarSettings.stripEnabledKey))
+    // The strip is meant to read as an abbreviation of the panel, so
+    // the segments it shares with the cards must appear in card order.
+    let cardOrder = ExpandableSection.allCases.map(\.rawValue)
+    let stripOrder = MenuBarSegment.allCases.map(\.rawValue)
+    check("segments follow the panel's card order",
+          stripOrder == cardOrder.filter(stripOrder.contains),
+          "strip \(stripOrder) vs cards \(cardOrder)")
+}
+
+section("RefreshCadence: which lane runs how fast")
+do {
+    check("panel open runs both lanes live",
+          RefreshCadence.fast(isPanelOpen: true, isStripVisible: false) == RefreshCadence.live
+          && RefreshCadence.slow(isPanelOpen: true, stripNeedsSlowLane: false)
+              == RefreshCadence.live)
+    check("nothing visible idles both lanes",
+          RefreshCadence.fast(isPanelOpen: false, isStripVisible: false) == RefreshCadence.idle
+          && RefreshCadence.slow(isPanelOpen: false, stripNeedsSlowLane: false)
+              == RefreshCadence.idle)
+    check("a strip of syscall readings keeps only the fast lane live",
+          RefreshCadence.fast(isPanelOpen: false, isStripVisible: true) == RefreshCadence.live
+          && RefreshCadence.slow(isPanelOpen: false, stripNeedsSlowLane: false)
+              == RefreshCadence.idle)
+    // The point of the middle tier: a sensor reading in the menu bar
+    // must not sit frozen for 15 s, but must not drag the SMC to 2 s
+    // either.
+    check("a sensor in the strip lands between live and idle",
+          RefreshCadence.slow(isPanelOpen: false, stripNeedsSlowLane: true)
+              == RefreshCadence.stripSensors)
+    check("the sensor tier really is in between",
+          RefreshCadence.live < RefreshCadence.stripSensors
+          && RefreshCadence.stripSensors < RefreshCadence.idle)
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 { exit(1) }
 }

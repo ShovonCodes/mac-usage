@@ -18,11 +18,17 @@ import AppKit
 
 /// One readout in the strip, in fixed left-to-right order.
 ///
+/// The order matches the panel's default card order, so the menu bar
+/// reads as an abbreviation of the panel rather than as a second,
+/// differently-sorted list of the same numbers.
+///
 /// Battery is deliberately absent: macOS already shows it natively,
 /// and a second copy would be pure duplication.
 enum MenuBarSegment: String, CaseIterable, Identifiable {
     case cpu
+    case gpu
     case memory
+    case power
     case network
     case temperature
 
@@ -31,7 +37,9 @@ enum MenuBarSegment: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .cpu: return "CPU"
+        case .gpu: return "GPU"
         case .memory: return "Memory"
+        case .power: return "Power"
         case .network: return "Network"
         case .temperature: return "Temperature"
         }
@@ -40,15 +48,38 @@ enum MenuBarSegment: String, CaseIterable, Identifiable {
     var defaultsKey: String {
         switch self {
         case .cpu: return "menuBarShowCpu"
+        case .gpu: return "menuBarShowGpu"
         case .memory: return "menuBarShowMemory"
+        case .power: return "menuBarShowPower"
         case .network: return "menuBarShowNetwork"
         case .temperature: return "menuBarShowTemperature"
         }
     }
 
-    /// Temperature is off by default; the other three are the ones
-    /// worth a permanent slice of the menu bar.
-    var isOnByDefault: Bool { self != .temperature }
+    /// CPU, memory and network are the three worth a permanent slice of
+    /// the menu bar on any Mac. GPU, power and temperature start off:
+    /// they matter enormously to some people and never to most, and
+    /// every segment that is on costs width for everyone.
+    var isOnByDefault: Bool {
+        switch self {
+        case .cpu, .memory, .network: return true
+        case .gpu, .power, .temperature: return false
+        }
+    }
+
+    /// True for readings produced by StatsStore's slow lane (the SMC,
+    /// the IO registry) rather than its fast one.
+    ///
+    /// The store needs this: with the panel shut the slow lane drops to
+    /// 15 s, which is invisible when these numbers only live in the
+    /// panel but reads as a frozen display when one of them is sitting
+    /// in the menu bar next to a sparkline moving every 2 s.
+    var isFedBySlowLane: Bool {
+        switch self {
+        case .cpu, .memory, .network: return false
+        case .gpu, .power, .temperature: return true
+        }
+    }
 }
 
 /// The defaults the strip reads. Shared so StatsStore (which needs to
@@ -76,6 +107,13 @@ enum MenuBarSettings {
         guard isStripEnabled else { return [] }
         return MenuBarSegment.allCases.filter(isEnabled)
     }
+
+    /// True when at least one visible segment is fed by the slow lane.
+    /// StatsStore reads this to decide how fast that lane has to run
+    /// while the panel is shut.
+    static var stripNeedsSlowLane: Bool {
+        visibleSegments.contains { $0.isFedBySlowLane }
+    }
 }
 
 /// The values one redraw needs. Assembled by the AppDelegate from the
@@ -93,6 +131,12 @@ struct MenuBarReadout {
     var uploadBytesPerSecond: Double = 0
     var downloadBytesPerSecond: Double = 0
     var cpuTemperatureCelsius: Double?
+    /// nil when no GPU could be read at all, which is a different thing
+    /// from a GPU sitting idle at 0%. The segment disappears for the
+    /// first and shows "0%" for the second.
+    var gpuUtilizationPercent: Double?
+    /// Whole-system draw. nil on a Mac exposing no usable power rail.
+    var systemWatts: Double?
 }
 
 enum MenuBarStrip {
@@ -105,6 +149,9 @@ enum MenuBarStrip {
     private static let meterWidth: CGFloat = 12
     private static let pinLength: CGFloat = 1.5
     private static let thermometerWidth: CGFloat = 7
+    private static let ringDiameter: CGFloat = 12
+    private static let boltWidth: CGFloat = 7
+    private static let boltHeight: CGFloat = 13
     /// The span the thermometer's mercury maps onto. Below 30 C a Mac
     /// is essentially cold and above 95 it is throttling, so anchoring
     /// the scale there uses the whole glyph for the range that
@@ -244,12 +291,35 @@ enum MenuBarStrip {
                 draw(text, at: x + sparklineWidth + innerGap, color: color)
             }
 
+        case .gpu:
+            // Absent GPU, absent segment. A "0%" here would be a claim
+            // the reader never made.
+            guard let utilization = readout.gpuUtilizationPercent else { return nil }
+            let text = "\(Int(utilization.rounded()))%"
+            let textWidth = width(of: text)
+            return Part(width: ringDiameter + innerGap + textWidth) { x, color in
+                drawBusyRing(utilization, at: x, color: color)
+                draw(text, at: x + ringDiameter + innerGap, color: color)
+            }
+
         case .memory:
             let text = "\(Int(readout.memoryPressurePercent.rounded()))%"
             let textWidth = width(of: text)
             return Part(width: meterWidth + innerGap + textWidth) { x, color in
                 drawMeter(readout.memoryPressurePercent, at: x, color: color)
                 draw(text, at: x + meterWidth + innerGap, color: color)
+            }
+
+        case .power:
+            guard let watts = readout.systemWatts else { return nil }
+            // Whole watts only. A tenth of a watt is inside the rail's
+            // own tick-to-tick noise, and the extra character would
+            // shuffle the width of everything to its right.
+            let text = "\(Int(watts.rounded()))W"
+            let textWidth = width(of: text)
+            return Part(width: boltWidth + innerGap + textWidth) { x, color in
+                drawBolt(at: x, color: color)
+                draw(text, at: x + boltWidth + innerGap, color: color)
             }
 
         case .network:
@@ -367,6 +437,68 @@ enum MenuBarStrip {
                                   height: well.height * fraction)).fill()
     }
 
+    /// A ring that fills clockwise from twelve o'clock.
+    ///
+    /// GPU and CPU are the same kind of number, so the strip cannot
+    /// tell them apart by their text: with no labels, identity has to
+    /// come from silhouette. CPU already owns the sparkline and memory
+    /// the chip, and a ring is the one remaining shape that is still
+    /// unmistakable at 12 pt. It is also what the GPU card's hover
+    /// detail draws, so the same metric looks the same in both places.
+    private static func drawBusyRing(_ percent: Double,
+                                     at x: CGFloat,
+                                     color: NSColor) {
+        let lineWidth: CGFloat = 2
+        let radius = (ringDiameter - lineWidth) / 2
+        let center = NSPoint(x: x + ringDiameter / 2, y: glyphSize / 2)
+
+        let track = NSBezierPath()
+        track.appendArc(withCenter: center, radius: radius,
+                        startAngle: 0, endAngle: 360)
+        track.lineWidth = lineWidth
+        color.withAlphaComponent(0.3).setStroke()
+        track.stroke()
+
+        let fraction = min(max(percent, 0), 100) / 100
+        guard fraction > 0 else { return }
+        let progress = NSBezierPath()
+        progress.appendArc(withCenter: center, radius: radius,
+                           startAngle: 90, endAngle: 90 - 360 * fraction,
+                           clockwise: true)
+        progress.lineWidth = lineWidth
+        // A round cap means a barely-busy GPU still leaves a visible
+        // dot rather than nothing, which would be indistinguishable
+        // from the segment being switched off.
+        progress.lineCapStyle = .round
+        color.setStroke()
+        progress.stroke()
+    }
+
+    /// A lightning bolt.
+    ///
+    /// Watts have no natural full scale, so unlike the meter and the
+    /// thermometer this glyph carries no value: it is pure identity,
+    /// there to say which number the digits beside it are. Filling it
+    /// would need a ceiling, and the panel card had to invent a moving
+    /// one; a moving ceiling cannot be explained in 7 pt of menu bar.
+    private static func drawBolt(at x: CGFloat, color: NSColor) {
+        let bottom = (glyphSize - boltHeight) / 2
+        // Outline in a 0-1 box, y up, scaled into the glyph.
+        let points: [(CGFloat, CGFloat)] = [
+            (0.62, 1.00), (0.00, 0.46), (0.38, 0.46),
+            (0.34, 0.00), (1.00, 0.54), (0.62, 0.54),
+        ]
+        let path = NSBezierPath()
+        for (index, point) in points.enumerated() {
+            let location = NSPoint(x: x + point.0 * boltWidth,
+                                   y: bottom + point.1 * boltHeight)
+            if index == 0 { path.move(to: location) } else { path.line(to: location) }
+        }
+        path.close()
+        color.setFill()
+        path.fill()
+    }
+
     /// A thermometer whose mercury rises with the reading.
     ///
     /// CPU has its sparkline and memory its chip, so temperature was
@@ -438,6 +570,14 @@ enum MenuBarStrip {
             switch segment {
             case .cpu:
                 parts.append("CPU \(Int(readout.cpuBusyPercent.rounded())) percent")
+            case .gpu:
+                if let utilization = readout.gpuUtilizationPercent {
+                    parts.append("GPU \(Int(utilization.rounded())) percent")
+                }
+            case .power:
+                if let watts = readout.systemWatts {
+                    parts.append("\(Int(watts.rounded())) watts")
+                }
             case .memory:
                 parts.append("memory pressure \(Int(readout.memoryPressurePercent.rounded())) percent")
             case .network:

@@ -140,7 +140,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             memoryPressurePercent: statsStore.memoryUsage.pressurePercent,
             uploadBytesPerSecond: statsStore.networkSpeed.uploadBytesPerSecond,
             downloadBytesPerSecond: statsStore.networkSpeed.downloadBytesPerSecond,
-            cpuTemperatureCelsius: statsStore.averageTemperatures[.cpu]
+            cpuTemperatureCelsius: statsStore.averageTemperatures[.cpu],
+            // The published snapshot, never a fresh read: GPU
+            // utilization is measured since the last read of the
+            // property, so a second caller would corrupt both. See
+            // GpuReader.
+            gpuUtilizationPercent: statsStore.gpu.isPresent
+                ? statsStore.gpu.utilizationPercent : nil,
+            systemWatts: statsStore.power.totalWatts
         )
         statusItem.button?.image = MenuBarStrip.make(
             readout: readout,

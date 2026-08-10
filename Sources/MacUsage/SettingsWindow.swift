@@ -186,10 +186,22 @@ private struct SettingRow: View {
 
 private struct MenuBarSettingsView: View {
     @AppStorage(MenuBarSettings.stripEnabledKey) private var showsStrip = true
-    @AppStorage("menuBarShowCpu") private var showsCpu = true
-    @AppStorage("menuBarShowMemory") private var showsMemory = true
-    @AppStorage("menuBarShowNetwork") private var showsNetwork = true
-    @AppStorage("menuBarShowTemperature") private var showsTemperature = false
+    // Key *and* default come from the segment itself. Spelling either
+    // out here again would let a switch disagree with the strip about
+    // an unset key, which is invisible until someone on a fresh install
+    // sees a toggle that is on next to a menu bar that shows nothing.
+    @AppStorage(MenuBarSegment.cpu.defaultsKey)
+    private var showsCpu = MenuBarSegment.cpu.isOnByDefault
+    @AppStorage(MenuBarSegment.gpu.defaultsKey)
+    private var showsGpu = MenuBarSegment.gpu.isOnByDefault
+    @AppStorage(MenuBarSegment.memory.defaultsKey)
+    private var showsMemory = MenuBarSegment.memory.isOnByDefault
+    @AppStorage(MenuBarSegment.power.defaultsKey)
+    private var showsPower = MenuBarSegment.power.isOnByDefault
+    @AppStorage(MenuBarSegment.network.defaultsKey)
+    private var showsNetwork = MenuBarSegment.network.isOnByDefault
+    @AppStorage(MenuBarSegment.temperature.defaultsKey)
+    private var showsTemperature = MenuBarSegment.temperature.isOnByDefault
 
     var body: some View {
         Form {
@@ -211,8 +223,11 @@ private struct MenuBarSettingsView: View {
                 Text("Readings")
             } footer: {
                 Text("Each reading takes menu bar width, so turning one off "
-                     + "gives that space back. Battery is not offered: macOS "
-                     + "already shows it.")
+                     + "gives that space back. A reading with nothing to show "
+                     + "(no GPU, no temperature sensor) takes none. GPU, power "
+                     + "and temperature come from the sensors, so switching one "
+                     + "on makes this Mac read them while the panel is shut. "
+                     + "Battery is not offered: macOS already shows it.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
@@ -223,7 +238,9 @@ private struct MenuBarSettingsView: View {
     private func binding(for segment: MenuBarSegment) -> Binding<Bool> {
         switch segment {
         case .cpu: return $showsCpu
+        case .gpu: return $showsGpu
         case .memory: return $showsMemory
+        case .power: return $showsPower
         case .network: return $showsNetwork
         case .temperature: return $showsTemperature
         }

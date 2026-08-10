@@ -71,8 +71,10 @@ Hover any card for the full story.
   parked on the line does not flicker.
 - **📟 Menu bar readouts**: a live CPU graph, memory percentage and
   network rates sit next to the icon, so the common checks need no
-  click at all. Each one can be switched off to give the width back,
-  or the whole strip can be, leaving just the icon.
+  click at all. GPU busy, watts drawn and CPU temperature are available
+  too, off by default since they matter to some people constantly and
+  most people never. Each one can be switched off to give the width
+  back, or the whole strip can be, leaving just the icon.
 - **⚙️ Settings**: hide cards you don't care about, drag to reorder
   them, start at login, and a privacy switch for the public-IP lookup.
 
@@ -169,12 +171,16 @@ entirely. No analytics, no update pings, nothing else.
 - The menu bar shows the icon plus whichever readouts you leave on.
 - Hovering a card expands a detail panel beside the main one.
 - Panel open: stats refresh every **2 seconds**.
-- Panel closed: the menu bar readouts keep refreshing every **2 seconds**,
-  since they are on screen. Everything behind them (sensors, fan speeds,
-  process lists) drops to **15 seconds**. Switch the menu bar readouts off
-  and that first group drops to 15 seconds too.
-- The menu bar readouts are three kernel calls per refresh, no
-  subprocesses, which is why they can stay live this cheaply.
+- Panel closed: the CPU, memory and network readouts keep refreshing every
+  **2 seconds**, since they are on screen. Everything behind them (sensors,
+  fan speeds, process lists) drops to **15 seconds**. Switch the menu bar
+  readouts off and that first group drops to 15 seconds too.
+- Those three readouts are three kernel calls per refresh, no
+  subprocesses, which is why they can stay live this cheaply. The GPU,
+  power and temperature readouts come from the sensors instead, so
+  putting one of them in the menu bar moves that group to **5 seconds**
+  while the panel is shut: fast enough not to look frozen next to the
+  CPU graph, slow enough to leave the SMC alone.
 - No Dock icon; the app lives entirely in the menu bar.
 - No admin rights needed for anything, including SMC fan/temperature
   reads.
@@ -208,8 +214,8 @@ four small steps:
    (anything touching the SMC, a subprocess or the network).
 4. In `StatsPanelView.swift`: add a `StatSectionCard` section rendering it.
 
-Good next candidates: Bluetooth device batteries, GPU
-readings in the menu bar strip.
+Good next candidates: Bluetooth device batteries, per-process network
+or disk attribution.
 
 If Mac Usage is useful to you, a ⭐ on the repo helps others find it.
 

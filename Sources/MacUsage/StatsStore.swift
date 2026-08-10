@@ -23,6 +23,37 @@ import Combine
 //   4. Add a section for it in StatsPanelView.
 // ─────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────
+// How often each lane ticks.
+//
+// Plain functions rather than properties on the store so the rules can
+// be checked without spinning real timers and waiting in real time.
+// ─────────────────────────────────────────────────────────────────
+enum RefreshCadence {
+    /// Someone is looking at a number that moves.
+    static let live: TimeInterval = 2
+    /// Nobody is. Keep the data warm for the next open, at almost no
+    /// energy cost.
+    static let idle: TimeInterval = 15
+    /// The panel is shut but the menu bar is showing a slow-lane
+    /// reading (temperature, GPU, power). 2 s would drag the SMC to the
+    /// fast lane's beat for a number nobody is staring at, which is the
+    /// whole reason the lanes are split; 15 s leaves that number
+    /// visibly frozen beside a sparkline moving every tick.
+    static let stripSensors: TimeInterval = 5
+
+    /// Pure syscalls, and the only thing most of the strip needs.
+    static func fast(isPanelOpen: Bool, isStripVisible: Bool) -> TimeInterval {
+        isPanelOpen || isStripVisible ? live : idle
+    }
+
+    /// The SMC, the IO registry, subprocesses.
+    static func slow(isPanelOpen: Bool, stripNeedsSlowLane: Bool) -> TimeInterval {
+        if isPanelOpen { return live }
+        return stripNeedsSlowLane ? stripSensors : idle
+    }
+}
+
 @MainActor
 final class StatsStore: ObservableObject {
 
@@ -70,28 +101,17 @@ final class StatsStore: ObservableObject {
     private let sensorReader = FanAndTemperatureReader()
     private let powerReader = PowerReader()
 
-    // Refresh timing, split into two lanes.
+    // Refresh timing, split into two lanes (see RefreshCadence above).
     //
     // The fast lane is only ever three in-process syscalls
     // (host_processor_info, sysctlbyname, NET_RT_IFLIST2), so it can
     // run often for almost nothing. The slow lane is everything that
     // talks to the SMC or spawns a subprocess, and must not.
-    //
-    // Today both lanes use the same cadence, so this is a pure
-    // restructuring. It exists so the menu bar strip can later keep
-    // the fast lane at 2s while the panel is closed, without dragging
-    // the SMC along with it.
-    private let fastIntervalWhenPanelOpen: TimeInterval = 2
-    /// With the strip on, the menu bar is showing these numbers even
-    /// when the panel is shut, so the fast lane keeps its pace.
-    private let fastIntervalWhenStripVisible: TimeInterval = 2
-    private let fastIntervalWhenIdle: TimeInterval = 15
-    private let slowIntervalWhenPanelOpen: TimeInterval = 2
-    private let slowIntervalWhenIdle: TimeInterval = 15
     private var fastTimer: Timer?
     private var slowTimer: Timer?
     private var isPanelOpen = false
     private var isStripVisible = MenuBarSettings.isStripEnabled
+    private var stripNeedsSlowLane = MenuBarSettings.stripNeedsSlowLane
     private var defaultsSubscription: AnyCancellable?
 
     /// Bumped at the end of every fast tick. The AppDelegate watches
@@ -137,12 +157,12 @@ final class StatsStore: ObservableObject {
         refreshSlowStats()
         restartTimers()
 
-        // Toggling the strip changes how often the fast lane has to
-        // run, so the timers follow the setting.
+        // What the strip is showing changes how often each lane has to
+        // run, so the timers follow the settings.
         defaultsSubscription = NotificationCenter.default
             .publisher(for: UserDefaults.didChangeNotification)
             .sink { [weak self] _ in
-                Task { @MainActor in self?.applyStripVisibilityChange() }
+                Task { @MainActor in self?.applyMenuBarSettingsChange() }
             }
     }
 
@@ -176,12 +196,16 @@ final class StatsStore: ObservableObject {
         }
     }
 
-    /// UserDefaults posts on any change, so restart only when the one
-    /// setting that affects timing actually flipped.
-    private func applyStripVisibilityChange() {
+    /// UserDefaults posts on any change, so restart only when a setting
+    /// that actually affects timing flipped.
+    private func applyMenuBarSettingsChange() {
         let isVisible = MenuBarSettings.isStripEnabled
-        guard isVisible != isStripVisible else { return }
+        let needsSlowLane = MenuBarSettings.stripNeedsSlowLane
+        guard isVisible != isStripVisible || needsSlowLane != stripNeedsSlowLane else {
+            return
+        }
         isStripVisible = isVisible
+        stripNeedsSlowLane = needsSlowLane
         restartTimers()
     }
 
@@ -202,15 +226,12 @@ final class StatsStore: ObservableObject {
 
     // MARK: Refreshing
 
-    private var fastInterval: TimeInterval {
-        if isPanelOpen { return fastIntervalWhenPanelOpen }
-        return isStripVisible ? fastIntervalWhenStripVisible : fastIntervalWhenIdle
-    }
-
     private func restartTimers() {
         fastTimer?.invalidate()
         fastTimer = Timer.scheduledTimer(
-            withTimeInterval: fastInterval,
+            withTimeInterval: RefreshCadence.fast(
+                isPanelOpen: isPanelOpen, isStripVisible: isStripVisible
+            ),
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor in self?.refreshFastStats() }
@@ -218,7 +239,9 @@ final class StatsStore: ObservableObject {
 
         slowTimer?.invalidate()
         slowTimer = Timer.scheduledTimer(
-            withTimeInterval: isPanelOpen ? slowIntervalWhenPanelOpen : slowIntervalWhenIdle,
+            withTimeInterval: RefreshCadence.slow(
+                isPanelOpen: isPanelOpen, stripNeedsSlowLane: stripNeedsSlowLane
+            ),
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor in self?.refreshSlowStats() }
