@@ -53,6 +53,56 @@ struct CpuDetails {
     var topProcesses: [ProcessCpuUsage] = []
 }
 
+/// One graphics processor as the IO registry describes it. Apple
+/// Silicon Macs have exactly one; Intel models with a discrete card
+/// report the integrated and the discrete GPU separately.
+struct GpuDevice: Identifiable {
+    /// The registry entry name ("AGXAcceleratorG13G_B0"). Stable
+    /// across reads and unique per card, which is what a list row
+    /// needs; the human-readable name is `name`.
+    let id: String
+    var name: String = ""
+    /// Apple Silicon publishes its GPU core count; Intel drivers do not.
+    var coreCount: Int?
+    /// 0-100, averaged over the interval since the previous read.
+    /// See GpuReader for why that interval is what it is.
+    var utilizationPercent: Double = 0
+    /// GPU memory currently in use: a slice of system RAM on unified
+    /// memory, dedicated VRAM on a discrete card.
+    var inUseMemoryBytes: UInt64 = 0
+    /// Everything the driver has reserved, in use or not. Always the
+    /// larger of the two, and the number that grows with what is open.
+    var allocatedMemoryBytes: UInt64 = 0
+}
+
+/// Every GPU in the machine, plus the headline figures the card shows.
+struct GpuSnapshot {
+    var devices: [GpuDevice] = []
+
+    var isPresent: Bool { !devices.isEmpty }
+
+    /// The busiest GPU. On a machine that can switch between an
+    /// integrated and a discrete card, the idle one would otherwise
+    /// drag an average down and hide real work.
+    var utilizationPercent: Double {
+        devices.map(\.utilizationPercent).max() ?? 0
+    }
+
+    var inUseMemoryBytes: UInt64 {
+        devices.reduce(0) { $0 + $1.inUseMemoryBytes }
+    }
+
+    /// Registry order, not the busiest, so the label does not flicker
+    /// between two cards as load moves around.
+    var name: String? { devices.first?.name }
+}
+
+/// One tick of GPU utilization history (for the card's bar chart).
+struct GpuHistoryPoint: Identifiable {
+    let id: Date
+    let utilizationPercent: Double
+}
+
 /// A snapshot of the battery's current state.
 struct BatterySnapshot {
     var isPresent = false

@@ -308,6 +308,7 @@ private struct CardsSettingsView: View {
     @AppStorage("cardOrder") private var cardOrderRaw = ""
     @AppStorage("showsPerCoreUsage") private var showsPerCoreUsage = true
     @AppStorage("showCpuCard") private var showsCpuCard = true
+    @AppStorage("showGpuCard") private var showsGpuCard = true
     @AppStorage("showMemoryCard") private var showsMemoryCard = true
     @AppStorage("showBatteryCard") private var showsBatteryCard = true
     @AppStorage("showNetworkCard") private var showsNetworkCard = true
@@ -375,6 +376,7 @@ private struct CardsSettingsView: View {
     private func visibilityBinding(for section: ExpandableSection) -> Binding<Bool> {
         switch section {
         case .cpu: return $showsCpuCard
+        case .gpu: return $showsGpuCard
         case .memory: return $showsMemoryCard
         case .battery: return $showsBatteryCard
         case .network: return $showsNetworkCard

@@ -65,10 +65,14 @@ do {
     check("empty string yields every card in default order",
           ExpandableSection.order(from: "") == ExpandableSection.allCases)
     let legacy = ExpandableSection.order(from: "cpu,memory,battery,network,temperature,fans")
-    check("legacy order gains disk without losing anything",
+    check("legacy order gains new cards without losing anything",
           Set(legacy) == all && legacy.count == all.count, "got \(legacy.map(\.rawValue))")
-    check("disk appended at the end for existing installs",
-          legacy.last == .disk, "got \(String(describing: legacy.last))")
+    check("cards added later are appended for existing installs",
+          Array(legacy.suffix(2)) == [.gpu, .disk], "got \(legacy.map(\.rawValue))")
+    check("a saved order keeps its own arrangement",
+          legacy.prefix(6).map(\.rawValue)
+              == ["cpu", "memory", "battery", "network", "temperature", "fans"],
+          "got \(legacy.map(\.rawValue))")
     check("unknown entries dropped",
           !ExpandableSection.order(from: "cpu,bogus,memory").map(\.rawValue).contains("bogus"))
     let duped = ExpandableSection.order(from: "cpu,cpu,cpu,memory")
@@ -88,15 +92,18 @@ MainActor.assumeIsolated {
 
     // Three samples inside one minute, then one in the next.
     store.record(cpuUser: 10, cpuSystem: 0, memoryPressure: 20, networkUp: 0,
-                 networkDown: 0, cpuTemperature: 40, now: base)
+                 networkDown: 0, cpuTemperature: 40, gpuUtilization: 12, now: base)
     store.record(cpuUser: 30, cpuSystem: 0, memoryPressure: 40, networkUp: 0,
-                 networkDown: 0, cpuTemperature: 60, now: base.addingTimeInterval(2))
+                 networkDown: 0, cpuTemperature: 60, gpuUtilization: 18,
+                 now: base.addingTimeInterval(2))
     store.record(cpuUser: 50, cpuSystem: 0, memoryPressure: 60, networkUp: 0,
-                 networkDown: 0, cpuTemperature: nil, now: base.addingTimeInterval(4))
+                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
+                 now: base.addingTimeInterval(4))
     check("minute still in progress is not published", store.minutes.isEmpty)
 
     store.record(cpuUser: 0, cpuSystem: 0, memoryPressure: 0, networkUp: 0,
-                 networkDown: 0, cpuTemperature: nil, now: base.addingTimeInterval(60))
+                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
+                 now: base.addingTimeInterval(60))
     check("rollover publishes exactly one row", store.minutes.count == 1,
           "got \(store.minutes.count)")
     check("cpu averaged across the minute", store.minutes[0].cpuUser == 30,
@@ -106,6 +113,9 @@ MainActor.assumeIsolated {
     check("temperature averages only samples that had one",
           store.minutes[0].cpuTemperature == 50,
           "got \(String(describing: store.minutes[0].cpuTemperature))")
+    check("gpu averages only samples that had one",
+          store.minutes[0].gpuUtilization == 15,
+          "got \(String(describing: store.minutes[0].gpuUtilization))")
     try? FileManager.default.removeItem(at: tmp)
 }
 
@@ -116,9 +126,10 @@ MainActor.assumeIsolated {
     let store = HistoryStore(fileURL: tmp)
     let base = Date(timeIntervalSince1970: 1_700_000_040)
     store.record(cpuUser: 1, cpuSystem: 1, memoryPressure: 1, networkUp: 1,
-                 networkDown: 1, cpuTemperature: nil, now: base)
+                 networkDown: 1, cpuTemperature: nil, gpuUtilization: nil, now: base)
     store.flushPending()
     check("no sensor yields nil, not zero", store.minutes.first?.cpuTemperature == nil)
+    check("no GPU yields nil, not zero", store.minutes.first?.gpuUtilization == nil)
     try? FileManager.default.removeItem(at: tmp)
 }
 
@@ -131,10 +142,11 @@ MainActor.assumeIsolated {
         let store = HistoryStore(fileURL: tmp)
         // One fresh minute, one two days stale.
         store.record(cpuUser: 42, cpuSystem: 8, memoryPressure: 5, networkUp: 0,
-                     networkDown: 0, cpuTemperature: 55, now: now.addingTimeInterval(-120))
+                     networkDown: 0, cpuTemperature: 55, gpuUtilization: 33,
+                     now: now.addingTimeInterval(-120))
         store.flushPending()
         store.record(cpuUser: 99, cpuSystem: 1, memoryPressure: 9, networkUp: 0,
-                     networkDown: 0, cpuTemperature: nil,
+                     networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
                      now: now.addingTimeInterval(-48 * 3600))
         store.flushPending()
         store.save()
@@ -146,6 +158,9 @@ MainActor.assumeIsolated {
         let reloaded = HistoryStore(fileURL: tmp)
         check("recent row survives a reload",
               reloaded.minutes.contains { $0.cpuUser == 42 })
+        check("gpu series survives a reload",
+              reloaded.minutes.first { $0.cpuUser == 42 }?.gpuUtilization == 33,
+              "got \(String(describing: reloaded.minutes.first?.gpuUtilization))")
         check("row older than 24 h pruned on load",
               !reloaded.minutes.contains { $0.cpuUser == 99 })
         check("recent(hours:) filters", reloaded.recent(hours: 0.1, now: now).count == 1,
@@ -165,7 +180,7 @@ MainActor.assumeIsolated {
     check("corrupt file is discarded, not fatal", store.minutes.isEmpty)
     // And it must still be usable afterwards.
     store.record(cpuUser: 5, cpuSystem: 5, memoryPressure: 5, networkUp: 0,
-                 networkDown: 0, cpuTemperature: nil, now: Date())
+                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil, now: Date())
     store.flushPending()
     check("store still records after a corrupt load", store.minutes.count == 1)
     try? FileManager.default.removeItem(at: bad)
@@ -173,6 +188,25 @@ MainActor.assumeIsolated {
     let missing = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("mu-missing-\(UUID().uuidString).json")
     check("missing file starts empty", HistoryStore(fileURL: missing).minutes.isEmpty)
+
+    // A file written by a version that predates a series must still
+    // load. Optional fields are what buys that: one non-optional
+    // addition would make every old file fail to parse and silently
+    // throw away the user's day of history.
+    let old = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("mu-old-\(UUID().uuidString).json")
+    let minute = Int(Date().timeIntervalSince1970 / 60) - 1
+    try? """
+    [{"m":\(minute),"cpuUser":7,"cpuSystem":3,"memoryPressure":11,\
+    "networkUp":0,"networkDown":0}]
+    """.write(to: old, atomically: true, encoding: .utf8)
+    let upgraded = HistoryStore(fileURL: old)
+    check("a file without the gpu field still loads", upgraded.minutes.count == 1,
+          "got \(upgraded.minutes.count)")
+    check("its missing series reads as absent",
+          upgraded.minutes.first?.gpuUtilization == nil)
+    check("its existing series survive", upgraded.minutes.first?.cpuUser == 7)
+    try? FileManager.default.removeItem(at: old)
 
     check("nil fileURL degrades to memory only",
           HistoryStore(fileURL: nil).minutes.isEmpty)
@@ -185,7 +219,7 @@ MainActor.assumeIsolated {
     // 1500 consecutive minutes, past the 1440 cap.
     for i in 0..<1_500 {
         store.record(cpuUser: Double(i), cpuSystem: 0, memoryPressure: 0, networkUp: 0,
-                     networkDown: 0, cpuTemperature: nil,
+                     networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
                      now: base.addingTimeInterval(Double(i) * 60))
     }
     check("retention capped at 24 h of rows", store.minutes.count <= 1_440,

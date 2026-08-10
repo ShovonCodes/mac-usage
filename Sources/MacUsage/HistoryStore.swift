@@ -40,6 +40,12 @@ struct HistoryMinute: Codable, Identifiable {
     var networkDown: Double = 0
     /// Absent when no CPU temperature sensor has reported yet.
     var cpuTemperature: Double?
+    /// Absent when no GPU reported during the minute. Optional for the
+    /// same reason as the temperature, and additionally so that files
+    /// written before this series existed still decode: a missing key
+    /// is a valid nil, where a non-optional would fail the whole file
+    /// and throw away the user's day of history.
+    var gpuUtilization: Double?
 
     var id: Int { m }
     var date: Date { Date(timeIntervalSince1970: TimeInterval(m) * 60) }
@@ -79,6 +85,7 @@ final class HistoryStore {
                 networkUp: Double,
                 networkDown: Double,
                 cpuTemperature: Double?,
+                gpuUtilization: Double?,
                 now: Date = Date()) {
         let minute = Int(now.timeIntervalSince1970 / 60)
 
@@ -93,7 +100,8 @@ final class HistoryStore {
             memoryPressure: memoryPressure,
             networkUp: networkUp,
             networkDown: networkDown,
-            cpuTemperature: cpuTemperature
+            cpuTemperature: cpuTemperature,
+            gpuUtilization: gpuUtilization
         ))
     }
 
@@ -103,7 +111,6 @@ final class HistoryStore {
         guard !pending.isEmpty else { return }
 
         let count = Double(pending.count)
-        let temperatures = pending.compactMap(\.cpuTemperature)
         let row = HistoryMinute(
             m: minute,
             cpuUser: pending.reduce(0) { $0 + $1.cpuUser } / count,
@@ -111,16 +118,23 @@ final class HistoryStore {
             memoryPressure: pending.reduce(0) { $0 + $1.memoryPressure } / count,
             networkUp: pending.reduce(0) { $0 + $1.networkUp } / count,
             networkDown: pending.reduce(0) { $0 + $1.networkDown } / count,
-            // nil rather than 0 when nothing reported, so "no sensor"
-            // and "0 degrees" stay distinguishable.
-            cpuTemperature: temperatures.isEmpty
-                ? nil
-                : temperatures.reduce(0, +) / Double(temperatures.count)
+            cpuTemperature: averageOfPresent(\.cpuTemperature),
+            gpuUtilization: averageOfPresent(\.gpuUtilization)
         )
 
         minutes.append(row)
         prune(now: row.date)
         save()
+    }
+
+    /// Average the samples that actually carried a value, or nil when
+    /// none did. The distinction matters: a minute with no temperature
+    /// sensor and a minute at 0 degrees are not the same reading, and
+    /// averaging absences in as zeroes would drag a real series down.
+    private func averageOfPresent(_ field: KeyPath<HistoryMinute, Double?>) -> Double? {
+        let values = pending.compactMap { $0[keyPath: field] }
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
     }
 
     /// Force the in-progress minute out to disk. Used on quit, where

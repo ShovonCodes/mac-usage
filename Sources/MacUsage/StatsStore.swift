@@ -28,6 +28,8 @@ final class StatsStore: ObservableObject {
     @Published var cpuUsage = CpuUsageSnapshot()
     @Published var cpuHistory: [CpuHistoryPoint] = []
     @Published var cpuDetails = CpuDetails()
+    @Published var gpu = GpuSnapshot()
+    @Published var gpuHistory: [GpuHistoryPoint] = []
     @Published var memoryUsage = MemoryUsageSnapshot()
     @Published var memoryDetails = MemoryDetails()
     @Published var networkSpeed = NetworkSpeedSnapshot()
@@ -53,6 +55,7 @@ final class StatsStore: ObservableObject {
     // The readers that actually collect the data.
     private let cpuReader = CpuUsageReader()
     private let cpuDetailsReader = CpuDetailsReader()
+    private let gpuReader = GpuReader()
     private let memoryReader = MemoryUsageReader()
     private let memoryDetailsReader = MemoryDetailsReader()
     private let diskReader = DiskReader()
@@ -111,6 +114,10 @@ final class StatsStore: ObservableObject {
     /// Disk throughput is sampled on the slow lane, so far fewer
     /// points cover the same span as the network chart.
     private let diskHistoryCapacity = 60
+    /// GPU utilization is on the slow lane too, but its chart shares
+    /// the CPU chart's two-minute window, so it keeps enough points to
+    /// fill that at the panel-open cadence with room to spare.
+    private let gpuHistoryCapacity = 120
 
     private let alertEngine = AlertEngine()
 
@@ -147,6 +154,14 @@ final class StatsStore: ObservableObject {
                 uploadBytesPerSecond: row.networkUp,
                 downloadBytesPerSecond: row.networkDown
             ))
+            // Only where a GPU actually reported: a machine that has
+            // been running without one should draw a gap, not a floor
+            // of zeroes.
+            if let utilization = row.gpuUtilization {
+                gpuHistory.append(GpuHistoryPoint(
+                    id: row.date, utilizationPercent: utilization
+                ))
+            }
         }
     }
 
@@ -235,7 +250,11 @@ final class StatsStore: ObservableObject {
             memoryPressure: memoryUsage.pressurePercent,
             networkUp: networkSpeed.uploadBytesPerSecond,
             networkDown: networkSpeed.downloadBytesPerSecond,
-            cpuTemperature: averageTemperatures[.cpu]
+            cpuTemperature: averageTemperatures[.cpu],
+            // Sampled on the slow lane, so this repeats the last value
+            // for a few fast ticks. Averaging a minute of those is the
+            // same bargain the temperature series already makes.
+            gpuUtilization: gpu.isPresent ? gpu.utilizationPercent : nil
         )
 
         menuBarTick &+= 1
@@ -264,6 +283,19 @@ final class StatsStore: ObservableObject {
         ))
         if diskHistory.count > diskHistoryCapacity {
             diskHistory.removeFirst(diskHistory.count - diskHistoryCapacity)
+        }
+
+        // GPU utilization is measured *since the previous read*, so
+        // this must stay the only place it is read and it must stay on
+        // one timer. See GpuReader for why.
+        gpu = gpuReader.readSnapshot()
+        if gpu.isPresent {
+            gpuHistory.append(GpuHistoryPoint(
+                id: Date(), utilizationPercent: gpu.utilizationPercent
+            ))
+            if gpuHistory.count > gpuHistoryCapacity {
+                gpuHistory.removeFirst(gpuHistory.count - gpuHistoryCapacity)
+            }
         }
 
         // History needs the fresh level; its first call also seeds

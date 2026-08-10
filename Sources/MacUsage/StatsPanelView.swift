@@ -12,6 +12,7 @@ import AppKit
 /// the case order here is the default card order on a fresh install.
 enum ExpandableSection: String, CaseIterable, Identifiable {
     case cpu
+    case gpu
     case memory
     case battery
     case network
@@ -24,6 +25,7 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .cpu: return "CPU"
+        case .gpu: return "GPU"
         case .memory: return "Memory"
         case .battery: return "Battery"
         case .network: return "Network"
@@ -44,6 +46,11 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
     var symbolName: String {
         switch self {
         case .cpu: return "cpu"
+        // There is no `gpu` symbol in any SF Symbols release (checked
+        // up to macOS 26: `cpu` and `memorychip` exist, `gpu` does
+        // not). The 3D cube is the nearest thing that reads as
+        // graphics work and is distinct from every other card icon.
+        case .gpu: return "cube.transparent"
         case .memory: return "memorychip"
         case .battery: return "battery.100percent"
         case .network: return "network"
@@ -88,6 +95,7 @@ struct StatsPanelView: View {
     // Which cards the user wants to see - persisted so hidden cards
     // stay hidden across launches.
     @AppStorage("showCpuCard") private var showsCpuCard = true
+    @AppStorage("showGpuCard") private var showsGpuCard = true
     @AppStorage("showMemoryCard") private var showsMemoryCard = true
     @AppStorage("showBatteryCard") private var showsBatteryCard = true
     @AppStorage("showNetworkCard") private var showsNetworkCard = true
@@ -156,6 +164,9 @@ struct StatsPanelView: View {
     private func isCardVisible(_ section: ExpandableSection) -> Bool {
         switch section {
         case .cpu: return showsCpuCard
+        // A Mac with no readable accelerator gets no empty card, the
+        // same way a desktop gets no battery card.
+        case .gpu: return showsGpuCard && statsStore.gpu.isPresent
         case .memory: return showsMemoryCard
         case .battery: return showsBatteryCard && statsStore.battery.isPresent
         case .network: return showsNetworkCard
@@ -169,6 +180,7 @@ struct StatsPanelView: View {
     private func card(for section: ExpandableSection) -> some View {
         switch section {
         case .cpu: cpuSection
+        case .gpu: gpuSection
         case .memory: memorySection
         case .battery: batterySection
         case .network: networkSection
@@ -206,6 +218,9 @@ struct StatsPanelView: View {
         case .cpu:
             detailPanelController.show(content: cpuDetailContent,
                                        besideWindowContaining: hostView)
+        case .gpu:
+            detailPanelController.show(content: gpuDetailContent,
+                                       besideWindowContaining: hostView)
         case .memory:
             detailPanelController.show(content: memoryDetailContent,
                                        besideWindowContaining: hostView)
@@ -239,6 +254,14 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
+    }
+
+    private var gpuDetailContent: some View {
+        GpuDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
     }
 
     private var batteryDetailContent: some View {
@@ -309,6 +332,39 @@ struct StatsPanelView: View {
         var parts = ["\(Int(statsStore.cpuUsage.totalBusyPercent))%"]
         if let cpuTemperature = statsStore.averageTemperatures[.cpu] {
             parts.append(String(format: "%.0f°", cpuTemperature))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: GPU
+
+    /// Same shape as the CPU card on purpose: a machine's two
+    /// processors should read alike, so a glance can compare them.
+    private var gpuSection: some View {
+        StatSectionCard(title: "GPU", titleTrailing: gpuTitleTrailing) {
+            VStack(spacing: 6) {
+                GpuHistoryChart(points: statsStore.gpuHistory)
+                HStack(spacing: 4) {
+                    Circle().fill(gpuColor).frame(width: 6, height: 6)
+                    Text("Utilization")
+                    Text("\(Int(statsStore.gpu.utilizationPercent))%")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Text("Memory")
+                    Text(formatBytes(statsStore.gpu.inUseMemoryBytes))
+                        .foregroundStyle(.primary)
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// "24% · 47°", matching the CPU card's trailing summary.
+    private var gpuTitleTrailing: String {
+        var parts = ["\(Int(statsStore.gpu.utilizationPercent))%"]
+        if let gpuTemperature = statsStore.averageTemperatures[.gpu] {
+            parts.append(String(format: "%.0f°", gpuTemperature))
         }
         return parts.joined(separator: " · ")
     }
@@ -516,6 +572,11 @@ struct StatsPanelView: View {
 private func formatBytes(_ bytes: UInt64) -> String {
     let formatter = ByteCountFormatter()
     formatter.countStyle = .memory
+    // Without this, zero formats as the word "Zero KB" - which in a
+    // column of monospaced digits reads as a broken reading rather
+    // than as nothing happening. "0 bytes" lines up with its
+    // neighbours and says the same thing.
+    formatter.allowsNonnumericFormatting = false
     return formatter.string(fromByteCount: Int64(bytes))
 }
 
@@ -571,6 +632,69 @@ struct CpuHistoryChart: View {
                                 .frame(height: barHeight(user[index]))
                         }
                         .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: Self.chartHeight, alignment: .bottom)
+            }
+            .frame(height: Self.chartHeight)
+
+            HStack {
+                Text("2 min ago")
+                Spacer()
+                Text("50% line")
+                Spacer()
+                Text("now")
+            }
+            .font(.system(size: 8))
+            .foregroundStyle(.tertiary)
+        }
+    }
+
+    private func barHeight(_ percent: Double?) -> CGFloat {
+        guard let percent, percent > 0 else { return 0.5 }
+        return max(1, Self.chartHeight * min(percent, 100) / 100)
+    }
+}
+
+/// The GPU's accent. Teal because every other hue in the panel is
+/// already spoken for by a series the GPU sits next to (blue and pink
+/// carry CPU user/system, network up/down and disk read/write), and a
+/// second processor deserves to be told apart at a glance.
+private let gpuColor: Color = Theme.teal
+
+/// Utilization over the same two-minute window as the CPU chart, so
+/// the two cards can be compared directly. One series rather than a
+/// stack: the GPU reports one busy figure, not a user/system split.
+struct GpuHistoryChart: View {
+    let points: [GpuHistoryPoint]
+
+    private static let windowSeconds: TimeInterval = 120
+    private static let slotCount = 60
+    private static let chartHeight: CGFloat = 40
+
+    var body: some View {
+        let slots = TimeBuckets.slots(
+            points, timestamp: \.id,
+            window: Self.windowSeconds, slotCount: Self.slotCount, now: Date()
+        )
+        let utilization = TimeBuckets.averaged(slots) { $0.utilizationPercent }
+
+        VStack(spacing: 3) {
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color(nsColor: .separatorColor))
+                        .frame(height: 1)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: Self.chartHeight / 2)
+
+                HStack(alignment: .bottom, spacing: 1) {
+                    ForEach(0..<Self.slotCount, id: \.self) { index in
+                        Rectangle()
+                            .fill(gpuColor)
+                            .frame(height: barHeight(utilization[index]))
+                            .frame(maxWidth: .infinity, alignment: .bottom)
                     }
                 }
                 .frame(height: Self.chartHeight, alignment: .bottom)
@@ -651,6 +775,8 @@ private struct DirectionLabel: View {
 private func speedText(_ bytesPerSecond: Double) -> String {
     let formatter = ByteCountFormatter()
     formatter.countStyle = .decimal
+    // An idle disk was reading "Zero KB/s". See formatBytes.
+    formatter.allowsNonnumericFormatting = false
     return formatter.string(fromByteCount: Int64(max(0, bytesPerSecond))) + "/s"
 }
 
@@ -1262,6 +1388,75 @@ struct CpuDetailColumn: View {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// GPU hover detail: 8 h trend, pipeline split, and the hardware
+// ─────────────────────────────────────────────────────────────────
+
+struct GpuDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "GPU Details")
+            StatSectionCard(title: "Utilization, last 8 h") {
+                TrendChart(
+                    points: statsStore.history.recent(hours: 8),
+                    value: { $0.gpuUtilization },
+                    scale: .fixed(0...100),
+                    color: { loadColor($0) },
+                    format: { String(format: "%.0f%%", $0) }
+                )
+            }
+            // One card per GPU. Apple Silicon has exactly one, so this
+            // is a single card there; an Intel Mac with a discrete card
+            // gets both, which is the only way to see which one the
+            // system has switched to.
+            ForEach(statsStore.gpu.devices) { device in
+                StatSectionCard(title: device.name) {
+                    // Gauge beside the facts, the same shape the fan
+                    // detail uses, so the two hardware columns read
+                    // alike.
+                    HStack(spacing: 14) {
+                        SegmentedCircularGauge(
+                            segments: [GaugeSegment(
+                                color: loadColor(device.utilizationPercent),
+                                fraction: device.utilizationPercent / 100
+                            )],
+                            label: "\(Int(device.utilizationPercent))%",
+                            caption: "BUSY",
+                            size: 64
+                        )
+                        // Every fact sits beside the ring rather than
+                        // under it. A 64 pt gauge with one row next to
+                        // it leaves an obvious hole, and these labels
+                        // are short enough to share the width.
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let coreCount = device.coreCount {
+                                LabeledValueRow(label: "Cores", value: "\(coreCount)")
+                            }
+                            // "In use" is what is live right now;
+                            // "reserved" is everything the driver is
+                            // holding on to, which is the larger
+                            // number and the one that tracks what you
+                            // have open.
+                            LabeledValueRow(label: "In use",
+                                            value: formatBytes(device.inUseMemoryBytes))
+                            if device.allocatedMemoryBytes > 0 {
+                                LabeledValueRow(label: "Reserved",
+                                                value: formatBytes(device.allocatedMemoryBytes))
+                            }
+                            if let temperature = statsStore.averageTemperatures[.gpu] {
+                                LabeledValueRow(label: "Temp",
+                                                value: String(format: "%.0f°", temperature))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One bar per logical core, grouped by cluster on Apple Silicon.
 ///
 /// The grouping is the point: four pegged efficiency cores is a
@@ -1318,7 +1513,7 @@ private struct CoreUsageRow: View {
                     Capsule()
                         .fill(Color(nsColor: .separatorColor))
                     Capsule()
-                        .fill(coreColor(core.busyPercent))
+                        .fill(loadColor(core.busyPercent))
                         .frame(width: proxy.size.width * min(max(core.busyPercent, 0), 100) / 100)
                 }
             }
@@ -1331,9 +1526,10 @@ private struct CoreUsageRow: View {
     }
 }
 
-/// Same thresholds as the other load gauges, so a busy core reads the
-/// same as a busy anything else.
-private func coreColor(_ percent: Double) -> Color {
+/// The shared busy ramp for anything measured as "percent of a
+/// processor". Used by the per-core bars and the GPU trend, so a busy
+/// core and a busy GPU are the same color at the same number.
+private func loadColor(_ percent: Double) -> Color {
     if percent < 50 { return Theme.green }
     if percent < 85 { return Theme.orange }
     return Theme.red

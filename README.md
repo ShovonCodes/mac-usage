@@ -6,7 +6,7 @@
 
 **A minimal, extendable macOS menu bar system monitor, inspired by iStat Menus.**
 
-CPU · Memory · Battery · Network · Disk · Temperature · Fans
+CPU · GPU · Memory · Battery · Network · Disk · Temperature · Fans
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
@@ -29,6 +29,11 @@ Hover any card for the full story.
   CPU temperature in the corner. Hover: every logical core as its own
   bar, grouped into performance and efficiency clusters on Apple
   Silicon, plus the usage breakdown and the five hungriest processes.
+- **🎮 GPU**: utilization history on the same two-minute window as the
+  CPU card, so the two processors can be compared at a glance, plus GPU
+  memory in use.
+  Hover: an 8-hour utilization trend, a busy ring, core count, and how
+  much memory the driver has in use and reserved.
 - **🧠 Memory**: pressure and usage rings, iStat-style. Hover: a
   24-hour pressure trend with its peak, plus
   App/Wired/Compressed/Free breakdown and a top-processes list that
@@ -46,7 +51,7 @@ Hover any card for the full story.
   color-coded from cool teal to alarming red; toggle raw sensor names on
   when you want the hardware's identity. Hover also shows a 24-hour CPU
   temperature trend.
-- **🕓 24-hour history**: CPU, memory, network and temperature are
+- **🕓 24-hour history**: CPU, GPU, memory, network and temperature are
   recorded once a minute and kept for a day, so the trends survive
   quitting and relaunching. Stored in
   `~/Library/Application Support/MacUsage`, removed by `uninstall.sh`.
@@ -196,8 +201,8 @@ four small steps:
    inside `refreshAllStats()`.
 4. In `StatsPanelView.swift`: add a `StatSectionCard` section rendering it.
 
-Good next candidates: disk usage & I/O, Bluetooth device batteries, power
-draw, per-core CPU.
+Good next candidates: Bluetooth device batteries, power draw, GPU
+readings in the menu bar strip.
 
 If Mac Usage is useful to you, a ⭐ on the repo helps others find it.
 
