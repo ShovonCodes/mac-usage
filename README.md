@@ -25,10 +25,9 @@ Hover any card for the full story.
 
 ## Highlights
 
-- **📊 CPU**: stacked user/system history chart with the current load and
-  CPU temperature in the corner. Hover: every logical core as its own
-  bar, grouped into performance and efficiency clusters on Apple
-  Silicon, plus the usage breakdown and the five hungriest processes.
+- **📊 CPU**: stacked user/system history chart with the current usage and CPU temperature in the corner.
+  Hover reads from the widest view down to the narrowest: an 8-hour busy trend, the 1/5/15-minute load averages stated against your core count, uptime, every logical core as its own bar (grouped into performance and efficiency clusters on Apple Silicon), the usage breakdown, and the five hungriest processes.
+  The load average is there because a percentage saturates: 100% busy with eight threads and 100% busy with sixty queued behind them look identical, and only the load average tells them apart.
 - **🎮 GPU**: utilization history on the same two-minute window as the
   CPU card, so the two processors can be compared at a glance, plus GPU
   memory in use.

@@ -262,11 +262,16 @@ struct StatsPanelView: View {
             .padding(12)
     }
 
+    /// Reports its size: the process list swaps a one-line "Measuring…"
+    /// for five rows on the first tick after launch, and the trend chart
+    /// swaps its own placeholder for bars. Without this the panel keeps
+    /// the height it was born with and clips the difference.
     private var cpuDetailContent: some View {
         CpuDetailColumn()
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
+            .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
     }
 
     private var gpuDetailContent: some View {
@@ -1629,6 +1634,32 @@ struct CpuDetailColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             DetailColumnHeader(title: "CPU Details")
+            // The day's CPU record was already being written to disk and
+            // was the one series with nowhere to read it: memory, GPU,
+            // power and temperature all had this chart, and the stat
+            // people watch most did not.
+            StatSectionCard(title: "Busy, last 8 h") {
+                TrendChart(
+                    points: statsStore.history.recent(hours: 8),
+                    value: { $0.cpuBusy },
+                    scale: .fixed(0...100),
+                    color: { loadColor($0) },
+                    format: { String(format: "%.0f%%", $0) }
+                )
+            }
+            // Reading down the column zooms in: eight hours, then the
+            // last one to fifteen minutes, then this instant per core,
+            // then which processes are behind it.
+            StatSectionCard(title: "Load average", titleTrailing: coreCountText) {
+                VStack(alignment: .leading, spacing: 8) {
+                    LoadAverageRow(load: statsStore.systemLoad)
+                    // Uptime shares the card rather than getting its own:
+                    // a single row in its own box weighs more than the
+                    // fact does, and "how hard, and for how long, has
+                    // this machine been running" is one thought.
+                    LabeledValueRow(label: "Uptime", value: uptimeValueText)
+                }
+            }
             if showsPerCoreUsage, !statsStore.cpuUsage.cores.isEmpty {
                 StatSectionCard(title: "Cores") {
                     CoreUsageGrid(cores: statsStore.cpuUsage.cores)
@@ -1662,6 +1693,70 @@ struct CpuDetailColumn: View {
                 }
             }
         }
+    }
+
+    /// "8 cores". Stated beside the load figures because a load average
+    /// cannot be judged without it: 6 is comfortable on an eight-core
+    /// Mac and oversubscribed on a dual-core one. nil rather than an
+    /// empty string when the count is unknown, so the card draws no
+    /// trailing label at all.
+    private var coreCountText: String? {
+        let count = statsStore.systemLoad.coreCount
+        return count > 0 ? "\(count) cores" : nil
+    }
+
+    private var uptimeValueText: String {
+        guard let seconds = statsStore.systemLoad.uptimeSeconds() else { return "-" }
+        return Self.uptimeText(seconds)
+    }
+
+    /// 305,790 → "3 d 12 h"; 4,200 → "1 h 10 min"; 30 → "< 1 min".
+    ///
+    /// Days matter here where they never did for a battery estimate, so
+    /// this cannot be `durationText`: an uptime is normally measured in
+    /// days, and "84 h 57 min" is not a figure anyone reads as three and
+    /// a half days. Below a day it hands over to `durationText` so the
+    /// two spans are worded the same way.
+    static func uptimeText(_ seconds: Int) -> String {
+        guard seconds >= 60 else { return "< 1 min" }
+        let minutes = seconds / 60
+        let minutesPerDay = 24 * 60
+        guard minutes >= minutesPerDay else { return durationText(minutes) }
+        let days = minutes / minutesPerDay
+        let hours = (minutes % minutesPerDay) / 60
+        return hours == 0 ? "\(days) d" : "\(days) d \(hours) h"
+    }
+}
+
+/// The 1 / 5 / 15 minute load averages, three columns wide.
+///
+/// Each figure is colored by how much of the machine it accounts for
+/// (see `SystemLoadSnapshot.committedPercent`) using the same ramp as
+/// the per-core bars, so a load of 8 on eight cores is the red a pegged
+/// core already is. Two decimals to match `uptime(1)`: load moves in
+/// fractions, and rounding 0.4 to "0" would read as an idle machine.
+private struct LoadAverageRow: View {
+    let load: SystemLoadSnapshot
+
+    var body: some View {
+        HStack(spacing: 0) {
+            column("1 min", load.oneMinute)
+            column("5 min", load.fiveMinutes)
+            column("15 min", load.fifteenMinutes)
+        }
+    }
+
+    private func column(_ label: String, _ value: Double?) -> some View {
+        VStack(spacing: 1) {
+            Text(value.map { String(format: "%.2f", $0) } ?? "-")
+                .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                .foregroundStyle(load.committedPercent(value).map(loadColor)
+                                 ?? Color.secondary)
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

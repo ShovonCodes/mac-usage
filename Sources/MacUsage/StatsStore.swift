@@ -61,6 +61,10 @@ final class StatsStore: ObservableObject {
     @Published var cpuUsage = CpuUsageSnapshot()
     @Published var cpuHistory: [CpuHistoryPoint] = []
     @Published var cpuDetails = CpuDetails()
+    /// Load average and uptime. Separate from `cpuUsage` because it is a
+    /// different measurement of the same hardware (queued threads, not
+    /// occupied time) and comes from a different syscall.
+    @Published var systemLoad = SystemLoadSnapshot()
     @Published var gpu = GpuSnapshot()
     @Published var gpuHistory: [GpuHistoryPoint] = []
     @Published var memoryUsage = MemoryUsageSnapshot()
@@ -90,6 +94,7 @@ final class StatsStore: ObservableObject {
     // The readers that actually collect the data.
     private let cpuReader = CpuUsageReader()
     private let cpuDetailsReader = CpuDetailsReader()
+    private let systemLoadReader = SystemLoadReader()
     private let gpuReader = GpuReader()
     private let memoryReader = MemoryUsageReader()
     private let memoryDetailsReader = MemoryDetailsReader()
@@ -103,10 +108,11 @@ final class StatsStore: ObservableObject {
 
     // Refresh timing, split into two lanes (see RefreshCadence above).
     //
-    // The fast lane is only ever three in-process syscalls
-    // (host_processor_info, sysctlbyname, NET_RT_IFLIST2), so it can
-    // run often for almost nothing. The slow lane is everything that
-    // talks to the SMC or spawns a subprocess, and must not.
+    // The fast lane is only ever in-process syscalls
+    // (host_processor_info, sysctlbyname, NET_RT_IFLIST2, getloadavg),
+    // so it can run often for almost nothing. The slow lane is
+    // everything that talks to the SMC or spawns a subprocess, and must
+    // not.
     private var fastTimer: Timer?
     private var slowTimer: Timer?
     private var isPanelOpen = false
@@ -248,12 +254,16 @@ final class StatsStore: ObservableObject {
         }
     }
 
-    /// The fast lane: three syscalls plus their history buffers.
+    /// The fast lane: a handful of syscalls plus their history buffers.
     /// Cheap enough for the main thread, and the only thing the menu
     /// bar strip will need.
     private func refreshFastStats() {
         cpuUsage = cpuReader.readCurrentUsage()
         memoryUsage = memoryReader.readCurrentUsage()
+        // getloadavg costs well under a microsecond, so it rides the
+        // fast lane with the rest of the pure syscalls rather than
+        // earning its own gate.
+        systemLoad = systemLoadReader.readSnapshot()
 
         cpuHistory.append(CpuHistoryPoint(
             id: Date(),

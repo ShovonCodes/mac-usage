@@ -53,6 +53,44 @@ struct CpuDetails {
     var topProcesses: [ProcessCpuUsage] = []
 }
 
+/// Load average and uptime: the two things `uptime(1)` reports, and the
+/// two questions a busy percentage cannot answer.
+struct SystemLoadSnapshot {
+    /// The kernel's runnable-thread averages. Optional because a failed
+    /// read is not a load of zero, and zero is a reading a genuinely
+    /// idle machine produces.
+    var oneMinute: Double?
+    var fiveMinutes: Double?
+    var fifteenMinutes: Double?
+    /// Logical cores - the reference point the averages are read
+    /// against, not a fact about the load itself.
+    var coreCount: Int = 0
+    /// When the machine last booted; nil if `kern.boottime` was
+    /// unreadable.
+    var bootDate: Date?
+
+    /// Seconds since boot, including any time the Mac spent asleep
+    /// (see SystemLoadReader for why that is the right span).
+    func uptimeSeconds(now: Date = Date()) -> Int? {
+        guard let bootDate else { return nil }
+        let seconds = now.timeIntervalSince(bootDate)
+        // A clock correction can put boot in the future. Report nothing
+        // rather than a negative age.
+        return seconds >= 0 ? Int(seconds) : nil
+    }
+
+    /// A load expressed against the cores available to run it: 4 on an
+    /// eight-core Mac is 50%, 8 is 100%, and past that work is queueing.
+    ///
+    /// Only used to color the figures, which is why it clamps: a load of
+    /// 40 on eight cores is as red as red gets, and an unclamped 500%
+    /// would say nothing extra.
+    func committedPercent(_ load: Double?) -> Double? {
+        guard let load, coreCount > 0 else { return nil }
+        return min(100, max(0, load) / Double(coreCount) * 100)
+    }
+}
+
 /// One graphics processor as the IO registry describes it. Apple
 /// Silicon Macs have exactly one; Intel models with a discrete card
 /// report the integrated and the discrete GPU separately.

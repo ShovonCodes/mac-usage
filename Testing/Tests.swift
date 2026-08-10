@@ -485,6 +485,66 @@ do {
           && RefreshCadence.stripSensors < RefreshCadence.idle)
 }
 
+section("SystemLoadSnapshot: load read against the cores that run it")
+do {
+    let eightCore = SystemLoadSnapshot(oneMinute: 4, fiveMinutes: 8, fifteenMinutes: 40,
+                                       coreCount: 8)
+    check("half the cores busy is 50%", eightCore.committedPercent(4) == 50,
+          "got \(String(describing: eightCore.committedPercent(4)))")
+    check("a load equal to the core count is fully committed",
+          eightCore.committedPercent(8) == 100)
+    // The figure only drives a color, and there is no color past red.
+    check("an oversubscribed machine clamps rather than reporting 500%",
+          eightCore.committedPercent(40) == 100)
+    check("an idle machine is 0%, not absent", eightCore.committedPercent(0) == 0)
+    // A missing reading must not colour as a healthy one.
+    check("an absent load stays absent", eightCore.committedPercent(nil) == nil)
+    check("no core count means no reference point",
+          SystemLoadSnapshot(coreCount: 0).committedPercent(4) == nil)
+
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let booted = SystemLoadSnapshot(bootDate: now.addingTimeInterval(-3 * 86_400))
+    check("uptime is measured from boot", booted.uptimeSeconds(now: now) == 3 * 86_400,
+          "got \(String(describing: booted.uptimeSeconds(now: now)))")
+    check("an unreadable boot time yields no uptime",
+          SystemLoadSnapshot().uptimeSeconds(now: now) == nil)
+    // A clock correction can move boot into the future; "-4 s of
+    // uptime" is worse than saying nothing.
+    check("a boot time in the future yields no uptime",
+          SystemLoadSnapshot(bootDate: now.addingTimeInterval(60))
+              .uptimeSeconds(now: now) == nil)
+}
+
+section("Uptime formatting: days, because uptimes are measured in them")
+do {
+    check("under a minute is not rounded to zero",
+          CpuDetailColumn.uptimeText(30) == "< 1 min",
+          "got \(CpuDetailColumn.uptimeText(30))")
+    check("a just-booted Mac reads sanely", CpuDetailColumn.uptimeText(0) == "< 1 min")
+    check("minutes", CpuDetailColumn.uptimeText(45 * 60) == "45 min",
+          "got \(CpuDetailColumn.uptimeText(45 * 60))")
+    check("a whole hour drops the minutes", CpuDetailColumn.uptimeText(3_600) == "1 h",
+          "got \(CpuDetailColumn.uptimeText(3_600))")
+    check("hours and minutes", CpuDetailColumn.uptimeText(4_200) == "1 h 10 min",
+          "got \(CpuDetailColumn.uptimeText(4_200))")
+    // The whole reason this is not durationText: 84 h 57 min is not a
+    // number anyone reads as three and a half days.
+    check("past a day it switches to days", CpuDetailColumn.uptimeText(305_790) == "3 d 12 h",
+          "got \(CpuDetailColumn.uptimeText(305_790))")
+    check("a whole day drops the hours", CpuDetailColumn.uptimeText(86_400) == "1 d",
+          "got \(CpuDetailColumn.uptimeText(86_400))")
+    check("the boundary is the day, not the 24th hour",
+          CpuDetailColumn.uptimeText(86_399) == "23 h 59 min",
+          "got \(CpuDetailColumn.uptimeText(86_399))")
+}
+
+section("HistoryMinute.cpuBusy: what the 8 h CPU trend draws")
+do {
+    let row = HistoryMinute(m: 100, cpuUser: 20, cpuSystem: 5)
+    check("busy is user plus system", row.cpuBusy == 25, "got \(row.cpuBusy)")
+    check("an idle minute is 0, not absent", HistoryMinute(m: 100).cpuBusy == 0)
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 { exit(1) }
 }
