@@ -311,6 +311,7 @@ private struct CardsSettingsView: View {
     @AppStorage("showGpuCard") private var showsGpuCard = true
     @AppStorage("showMemoryCard") private var showsMemoryCard = true
     @AppStorage("showBatteryCard") private var showsBatteryCard = true
+    @AppStorage("showPowerCard") private var showsPowerCard = true
     @AppStorage("showNetworkCard") private var showsNetworkCard = true
     @AppStorage("showDiskCard") private var showsDiskCard = true
     @AppStorage("showTemperatureCard") private var showsTemperatureCard = true
@@ -379,6 +380,7 @@ private struct CardsSettingsView: View {
         case .gpu: return $showsGpuCard
         case .memory: return $showsMemoryCard
         case .battery: return $showsBatteryCard
+        case .power: return $showsPowerCard
         case .network: return $showsNetworkCard
         case .disk: return $showsDiskCard
         case .temperature: return $showsTemperatureCard

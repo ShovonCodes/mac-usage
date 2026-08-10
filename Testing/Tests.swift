@@ -68,7 +68,8 @@ do {
     check("legacy order gains new cards without losing anything",
           Set(legacy) == all && legacy.count == all.count, "got \(legacy.map(\.rawValue))")
     check("cards added later are appended for existing installs",
-          Array(legacy.suffix(2)) == [.gpu, .disk], "got \(legacy.map(\.rawValue))")
+          Array(legacy.suffix(3)) == [.gpu, .power, .disk],
+          "got \(legacy.map(\.rawValue))")
     check("a saved order keeps its own arrangement",
           legacy.prefix(6).map(\.rawValue)
               == ["cpu", "memory", "battery", "network", "temperature", "fans"],
@@ -92,17 +93,17 @@ MainActor.assumeIsolated {
 
     // Three samples inside one minute, then one in the next.
     store.record(cpuUser: 10, cpuSystem: 0, memoryPressure: 20, networkUp: 0,
-                 networkDown: 0, cpuTemperature: 40, gpuUtilization: 12, now: base)
+                 networkDown: 0, cpuTemperature: 40, gpuUtilization: 12, systemPowerWatts: 6, now: base)
     store.record(cpuUser: 30, cpuSystem: 0, memoryPressure: 40, networkUp: 0,
-                 networkDown: 0, cpuTemperature: 60, gpuUtilization: 18,
+                 networkDown: 0, cpuTemperature: 60, gpuUtilization: 18, systemPowerWatts: 10,
                  now: base.addingTimeInterval(2))
     store.record(cpuUser: 50, cpuSystem: 0, memoryPressure: 60, networkUp: 0,
-                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
+                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil, systemPowerWatts: nil,
                  now: base.addingTimeInterval(4))
     check("minute still in progress is not published", store.minutes.isEmpty)
 
     store.record(cpuUser: 0, cpuSystem: 0, memoryPressure: 0, networkUp: 0,
-                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
+                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil, systemPowerWatts: nil,
                  now: base.addingTimeInterval(60))
     check("rollover publishes exactly one row", store.minutes.count == 1,
           "got \(store.minutes.count)")
@@ -116,6 +117,9 @@ MainActor.assumeIsolated {
     check("gpu averages only samples that had one",
           store.minutes[0].gpuUtilization == 15,
           "got \(String(describing: store.minutes[0].gpuUtilization))")
+    check("power averages only samples that had one",
+          store.minutes[0].systemPowerWatts == 8,
+          "got \(String(describing: store.minutes[0].systemPowerWatts))")
     try? FileManager.default.removeItem(at: tmp)
 }
 
@@ -126,10 +130,13 @@ MainActor.assumeIsolated {
     let store = HistoryStore(fileURL: tmp)
     let base = Date(timeIntervalSince1970: 1_700_000_040)
     store.record(cpuUser: 1, cpuSystem: 1, memoryPressure: 1, networkUp: 1,
-                 networkDown: 1, cpuTemperature: nil, gpuUtilization: nil, now: base)
+                 networkDown: 1, cpuTemperature: nil, gpuUtilization: nil, systemPowerWatts: nil,
+                 now: base)
     store.flushPending()
     check("no sensor yields nil, not zero", store.minutes.first?.cpuTemperature == nil)
     check("no GPU yields nil, not zero", store.minutes.first?.gpuUtilization == nil)
+    check("no power rail yields nil, not zero",
+          store.minutes.first?.systemPowerWatts == nil)
     try? FileManager.default.removeItem(at: tmp)
 }
 
@@ -142,11 +149,11 @@ MainActor.assumeIsolated {
         let store = HistoryStore(fileURL: tmp)
         // One fresh minute, one two days stale.
         store.record(cpuUser: 42, cpuSystem: 8, memoryPressure: 5, networkUp: 0,
-                     networkDown: 0, cpuTemperature: 55, gpuUtilization: 33,
+                     networkDown: 0, cpuTemperature: 55, gpuUtilization: 33, systemPowerWatts: 7.5,
                      now: now.addingTimeInterval(-120))
         store.flushPending()
         store.record(cpuUser: 99, cpuSystem: 1, memoryPressure: 9, networkUp: 0,
-                     networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
+                     networkDown: 0, cpuTemperature: nil, gpuUtilization: nil, systemPowerWatts: nil,
                      now: now.addingTimeInterval(-48 * 3600))
         store.flushPending()
         store.save()
@@ -161,6 +168,9 @@ MainActor.assumeIsolated {
         check("gpu series survives a reload",
               reloaded.minutes.first { $0.cpuUser == 42 }?.gpuUtilization == 33,
               "got \(String(describing: reloaded.minutes.first?.gpuUtilization))")
+        check("power series survives a reload",
+              reloaded.minutes.first { $0.cpuUser == 42 }?.systemPowerWatts == 7.5,
+              "got \(String(describing: reloaded.minutes.first?.systemPowerWatts))")
         check("row older than 24 h pruned on load",
               !reloaded.minutes.contains { $0.cpuUser == 99 })
         check("recent(hours:) filters", reloaded.recent(hours: 0.1, now: now).count == 1,
@@ -180,7 +190,8 @@ MainActor.assumeIsolated {
     check("corrupt file is discarded, not fatal", store.minutes.isEmpty)
     // And it must still be usable afterwards.
     store.record(cpuUser: 5, cpuSystem: 5, memoryPressure: 5, networkUp: 0,
-                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil, now: Date())
+                 networkDown: 0, cpuTemperature: nil, gpuUtilization: nil, systemPowerWatts: nil,
+                 now: Date())
     store.flushPending()
     check("store still records after a corrupt load", store.minutes.count == 1)
     try? FileManager.default.removeItem(at: bad)
@@ -203,8 +214,9 @@ MainActor.assumeIsolated {
     let upgraded = HistoryStore(fileURL: old)
     check("a file without the gpu field still loads", upgraded.minutes.count == 1,
           "got \(upgraded.minutes.count)")
-    check("its missing series reads as absent",
-          upgraded.minutes.first?.gpuUtilization == nil)
+    check("its missing series read as absent",
+          upgraded.minutes.first?.gpuUtilization == nil
+              && upgraded.minutes.first?.systemPowerWatts == nil)
     check("its existing series survive", upgraded.minutes.first?.cpuUser == 7)
     try? FileManager.default.removeItem(at: old)
 
@@ -219,13 +231,79 @@ MainActor.assumeIsolated {
     // 1500 consecutive minutes, past the 1440 cap.
     for i in 0..<1_500 {
         store.record(cpuUser: Double(i), cpuSystem: 0, memoryPressure: 0, networkUp: 0,
-                     networkDown: 0, cpuTemperature: nil, gpuUtilization: nil,
+                     networkDown: 0, cpuTemperature: nil, gpuUtilization: nil, systemPowerWatts: nil,
                      now: base.addingTimeInterval(Double(i) * 60))
     }
     check("retention capped at 24 h of rows", store.minutes.count <= 1_440,
           "got \(store.minutes.count)")
     check("newest rows kept, oldest dropped",
           store.minutes.last!.cpuUser > store.minutes.first!.cpuUser)
+}
+
+section("PowerEnergySummary: watt-minutes become watt-hours")
+do {
+    func row(_ minute: Int, _ watts: Double?) -> HistoryMinute {
+        HistoryMinute(m: minute, systemPowerWatts: watts)
+    }
+    // 60 minutes at 12 W is exactly 12 Wh, which is the one case where
+    // a units mistake cannot hide behind a plausible-looking number.
+    let hour = PowerEnergySummary(rows: (0..<60).map { row($0, 12) })
+    check("an hour at 12 W is 12 Wh", abs(hour.wattHours - 12) < 0.0001,
+          "got \(hour.wattHours)")
+    check("average is the mean", hour.averageWatts == 12)
+    check("coverage counts the minutes", hour.minutesCovered == 60)
+
+    let mixed = PowerEnergySummary(rows: [row(0, 6), row(1, nil), row(2, 30)])
+    check("gaps are left out of the energy total",
+          abs(mixed.wattHours - 36.0 / 60) < 0.0001, "got \(mixed.wattHours)")
+    check("gaps do not drag the average down", mixed.averageWatts == 18,
+          "got \(mixed.averageWatts)")
+    check("peak is the highest minute", mixed.peakWatts == 30)
+    check("coverage excludes the gap", mixed.minutesCovered == 2)
+
+    let none = PowerEnergySummary(rows: [row(0, nil), row(1, nil)])
+    check("no readings reports empty rather than 0 Wh", none.isEmpty)
+    check("empty summary has no energy", none.wattHours == 0)
+    check("empty rows are safe", PowerEnergySummary(rows: []).isEmpty)
+}
+
+section("PowerSnapshot: which rail leads, and when the card exists")
+do {
+    check("system total leads when present",
+          PowerSnapshot(systemWatts: 8, batteryWatts: 9, adapterWatts: 0).totalWatts == 8)
+    check("battery rail stands in for a missing system rail",
+          PowerSnapshot(systemWatts: nil, batteryWatts: 9, adapterWatts: nil).totalWatts == 9)
+    check("adapter rail is the last resort",
+          PowerSnapshot(systemWatts: nil, batteryWatts: nil, adapterWatts: 61).totalWatts == 61)
+    check("no rail means no card", !PowerSnapshot().isPresent)
+    // 0 W is a reading, not an absence: the mains rail sits there
+    // whenever the charger is out.
+    check("a rail reading zero still counts as present",
+          PowerSnapshot(systemWatts: 0).isPresent)
+}
+
+section("PowerReader: implausible rail readings are rejected")
+do {
+    check("a normal wattage passes", PowerReader.plausibleWatts(8.4) == 8.4)
+    check("zero passes", PowerReader.plausibleWatts(0) == 0)
+    // Seen while scanning the SMC: some keys in the P group answer -1.
+    check("negative rejected", PowerReader.plausibleWatts(-1) == nil)
+    check("beyond any Mac power supply rejected", PowerReader.plausibleWatts(5_000) == nil)
+    check("absent key stays absent", PowerReader.plausibleWatts(nil) == nil)
+}
+
+section("PowerHistoryChart: the moving scale has a floor")
+do {
+    check("idle jitter does not fill the chart",
+          PowerHistoryChart.fullScale(for: [0.2, 0.3, 0.1]) == 10,
+          "got \(PowerHistoryChart.fullScale(for: [0.2, 0.3, 0.1]))")
+    check("a load peak raises the scale to the next 5 W",
+          PowerHistoryChart.fullScale(for: [8, 21.4]) == 25,
+          "got \(PowerHistoryChart.fullScale(for: [8, 21.4]))")
+    check("a peak already on the step is not rounded past it",
+          PowerHistoryChart.fullScale(for: [20]) == 20)
+    check("an empty window still has a scale",
+          PowerHistoryChart.fullScale(for: []) == 10)
 }
 
 section("AlertEngine: hysteresis stops flapping")

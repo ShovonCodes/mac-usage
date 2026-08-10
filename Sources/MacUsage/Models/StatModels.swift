@@ -103,6 +103,71 @@ struct GpuHistoryPoint: Identifiable {
     let utilizationPercent: Double
 }
 
+/// How many watts the machine is pulling, per SMC power rail.
+///
+/// Every field is optional because "this Mac does not publish that
+/// rail" and "that rail reads 0 W" are different facts: the mains rail
+/// genuinely sits at zero whenever the charger is out, and rendering
+/// that as a missing row would make the row flicker with the cable.
+struct PowerSnapshot {
+    /// The SMC's own system-total rail (`PSTR`).
+    var systemWatts: Double?
+    /// The battery rail (`PPBR`). Direction is not in the rail - it is
+    /// the same positive number charging or discharging - so the UI
+    /// takes charging state from `BatterySnapshot`.
+    var batteryWatts: Double?
+    /// Mains input (`PDTR`); 0 while unplugged.
+    var adapterWatts: Double?
+
+    /// The headline figure. System total when the Mac publishes it,
+    /// otherwise whichever rail is available, so a Mac exposing only a
+    /// battery rail still gets a working card rather than an empty one.
+    var totalWatts: Double? {
+        systemWatts ?? batteryWatts ?? adapterWatts
+    }
+
+    var isPresent: Bool { totalWatts != nil }
+}
+
+/// One tick of power draw (for the card's bar chart).
+struct PowerHistoryPoint: Identifiable {
+    let id: Date
+    let watts: Double
+}
+
+/// Watt-hours and averages derived from the persisted minute record.
+///
+/// This is the payoff of keeping a day of history: a live wattage
+/// answers "what is it doing now", where energy answers "what did this
+/// machine cost me today", which is the question a battery owner
+/// actually has.
+struct PowerEnergySummary {
+    /// Energy over the minutes that carried a reading.
+    var wattHours: Double = 0
+    var averageWatts: Double = 0
+    var peakWatts: Double = 0
+    /// How many minutes actually contributed. Reported so the figures
+    /// can say what span they cover: a Mac asleep for six hours has no
+    /// samples for them, and quietly presenting 18 hours of energy as
+    /// "the last 24 hours" would overstate the coverage.
+    var minutesCovered: Int = 0
+
+    var isEmpty: Bool { minutesCovered == 0 }
+
+    /// Each row is one minute's average wattage, so energy is the sum
+    /// of those watt-minutes over 60. Rows without a reading are not
+    /// interpolated across - they are left out, and counted out.
+    init(rows: [HistoryMinute]) {
+        let watts = rows.compactMap(\.systemPowerWatts)
+        guard !watts.isEmpty else { return }
+        let total = watts.reduce(0, +)
+        wattHours = total / 60
+        averageWatts = total / Double(watts.count)
+        peakWatts = watts.max() ?? 0
+        minutesCovered = watts.count
+    }
+}
+
 /// A snapshot of the battery's current state.
 struct BatterySnapshot {
     var isPresent = false

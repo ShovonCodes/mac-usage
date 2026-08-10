@@ -6,7 +6,7 @@
 
 **A minimal, extendable macOS menu bar system monitor, inspired by iStat Menus.**
 
-CPU · GPU · Memory · Battery · Network · Disk · Temperature · Fans
+CPU · GPU · Memory · Battery · Power · Network · Disk · Temperature · Fans
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
@@ -41,6 +41,11 @@ Hover any card for the full story.
 - **🔋 Battery**: level ring with time remaining, health ring. Hover: a
   24-hour level history (hover a bar for that hour), charge details,
   max capacity, and cycle count.
+- **⚡ Power**: how many watts the machine is actually pulling, on the
+  same two-minute chart as the CPU and GPU cards, with the day's average
+  beside it so you can tell an unusual moment from a normal one. Hover:
+  an 8-hour draw trend, each SMC power rail on its own row (system total,
+  battery, adapter), and the day's energy in watt-hours.
 - **🌐 Network**: live upload/download with a two-minute activity
   sparkline. Hover: a five-minute chart with per-direction peaks,
   Wi-Fi name, local and public IPs.
@@ -51,7 +56,8 @@ Hover any card for the full story.
   color-coded from cool teal to alarming red; toggle raw sensor names on
   when you want the hardware's identity. Hover also shows a 24-hour CPU
   temperature trend.
-- **🕓 24-hour history**: CPU, GPU, memory, network and temperature are
+- **🕓 24-hour history**: CPU, GPU, memory, network, power and
+  temperature are
   recorded once a minute and kept for a day, so the trends survive
   quitting and relaunching. Stored in
   `~/Library/Application Support/MacUsage`, removed by `uninstall.sh`.
@@ -198,10 +204,11 @@ four small steps:
    with a `readCurrentUsage()`-style method returning a model struct.
 2. Add the model struct to `Models/StatModels.swift`.
 3. In `StatsStore.swift`: add a `@Published` property and call your reader
-   inside `refreshAllStats()`.
+   inside `refreshFastStats()` (pure syscalls) or `refreshSlowStats()`
+   (anything touching the SMC, a subprocess or the network).
 4. In `StatsPanelView.swift`: add a `StatSectionCard` section rendering it.
 
-Good next candidates: Bluetooth device batteries, power draw, GPU
+Good next candidates: Bluetooth device batteries, GPU
 readings in the menu bar strip.
 
 If Mac Usage is useful to you, a ⭐ on the repo helps others find it.

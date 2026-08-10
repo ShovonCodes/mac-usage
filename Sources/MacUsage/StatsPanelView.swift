@@ -15,6 +15,7 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
     case gpu
     case memory
     case battery
+    case power
     case network
     case disk
     case temperature
@@ -28,6 +29,7 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
         case .gpu: return "GPU"
         case .memory: return "Memory"
         case .battery: return "Battery"
+        case .power: return "Power"
         case .network: return "Network"
         case .disk: return "Disk"
         case .temperature: return "Temperature"
@@ -53,6 +55,9 @@ enum ExpandableSection: String, CaseIterable, Identifiable {
         case .gpu: return "cube.transparent"
         case .memory: return "memorychip"
         case .battery: return "battery.100percent"
+        // Checked to resolve on macOS 13's SF Symbols 4 set, unlike the
+        // `fan`/`battery.100` traps above.
+        case .power: return "bolt"
         case .network: return "network"
         case .disk: return "internaldrive"
         case .temperature: return "thermometer.medium"
@@ -98,6 +103,7 @@ struct StatsPanelView: View {
     @AppStorage("showGpuCard") private var showsGpuCard = true
     @AppStorage("showMemoryCard") private var showsMemoryCard = true
     @AppStorage("showBatteryCard") private var showsBatteryCard = true
+    @AppStorage("showPowerCard") private var showsPowerCard = true
     @AppStorage("showNetworkCard") private var showsNetworkCard = true
     @AppStorage("showDiskCard") private var showsDiskCard = true
     @AppStorage("showTemperatureCard") private var showsTemperatureCard = true
@@ -169,6 +175,9 @@ struct StatsPanelView: View {
         case .gpu: return showsGpuCard && statsStore.gpu.isPresent
         case .memory: return showsMemoryCard
         case .battery: return showsBatteryCard && statsStore.battery.isPresent
+        // A Mac whose SMC publishes no power rail gets no empty watt
+        // meter, same rule as the GPU and battery cards.
+        case .power: return showsPowerCard && statsStore.power.isPresent
         case .network: return showsNetworkCard
         case .disk: return showsDiskCard
         case .temperature: return showsTemperatureCard
@@ -183,6 +192,7 @@ struct StatsPanelView: View {
         case .gpu: gpuSection
         case .memory: memorySection
         case .battery: batterySection
+        case .power: powerSection
         case .network: networkSection
         case .disk: diskSection
         case .temperature: temperaturesSection
@@ -227,6 +237,9 @@ struct StatsPanelView: View {
         case .battery:
             detailPanelController.show(content: batteryDetailContent,
                                        besideWindowContaining: hostView)
+        case .power:
+            detailPanelController.show(content: powerDetailContent,
+                                       besideWindowContaining: hostView)
         case .network:
             detailPanelController.show(content: networkDetailContent,
                                        besideWindowContaining: hostView)
@@ -269,6 +282,17 @@ struct StatsPanelView: View {
             .environmentObject(statsStore)
             .frame(width: 240)
             .padding(12)
+    }
+
+    /// Reports its size: the rail list is only as long as the rails
+    /// this Mac publishes, and the energy card swaps a one-line
+    /// "collecting" message for four rows once a minute has completed.
+    private var powerDetailContent: some View {
+        PowerDetailColumn()
+            .environmentObject(statsStore)
+            .frame(width: 240)
+            .padding(12)
+            .modifier(SizeReporter { detailPanelController.updateContentSize($0) })
     }
 
     private var networkDetailContent: some View {
@@ -426,6 +450,51 @@ struct StatsPanelView: View {
                 Spacer()
             }
         }
+    }
+
+    // MARK: Power
+
+    /// Chart plus legend, the CPU/GPU card shape, because power is the
+    /// third thing that rises and falls with what the machine is doing
+    /// and it should be readable in the same glance.
+    private var powerSection: some View {
+        StatSectionCard(title: "Power", titleTrailing: powerTitleTrailing) {
+            VStack(spacing: 6) {
+                PowerHistoryChart(points: statsStore.powerHistory)
+                HStack(spacing: 4) {
+                    Circle().fill(powerColor).frame(width: 6, height: 6)
+                    Text("System")
+                    Text(wattsText(statsStore.power.systemWatts))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    // The day's average rather than a second rail.
+                    // Putting the battery and system rails side by side
+                    // was the first attempt and it read as a bug: two
+                    // measurements of the same watts, 2-3 W apart,
+                    // both jittering. The average competes with
+                    // nothing and answers the question a live wattage
+                    // cannot - whether right now is unusual. The
+                    // individual rails are one hover away.
+                    Text("24 h avg")
+                    Text(wattsText(dayAverageWatts))
+                        .foregroundStyle(.primary)
+                }
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// "8.4 W", matching the CPU and GPU cards' trailing summary.
+    private var powerTitleTrailing: String {
+        wattsText(statsStore.power.totalWatts)
+    }
+
+    /// nil until a full minute has been recorded, so the legend shows
+    /// "-" rather than an average of nothing.
+    private var dayAverageWatts: Double? {
+        let energy = PowerEnergySummary(rows: statsStore.history.recent(hours: 24))
+        return energy.isEmpty ? nil : energy.averageWatts
     }
 
     // MARK: Network
@@ -719,6 +788,98 @@ struct GpuHistoryChart: View {
     }
 }
 
+/// Yellow: the remaining free hue, and the one that reads as
+/// electricity next to a bolt glyph. Blue and pink are spoken for by
+/// CPU/network/disk pairs, and teal is the GPU.
+private let powerColor: Color = Theme.yellow
+
+/// "8.4 W". One decimal below 10 W, none above: idle draw is where a
+/// tenth of a watt is a real difference, and "18.3 W" under load is
+/// three digits of noise.
+private func wattsText(_ watts: Double?) -> String {
+    guard let watts else { return "-" }
+    return watts < 10
+        ? String(format: "%.1f W", watts)
+        : String(format: "%.0f W", watts)
+}
+
+/// Power draw over the same two-minute window as the CPU and GPU
+/// charts.
+///
+/// Unlike those two, watts have no natural full scale, so the top of
+/// the chart is the window's own peak rounded up to the next 5 W, with
+/// a 10 W floor. Without the floor an idle Mac's 0.2 W of jitter would
+/// fill the chart and read as violent activity; without the rounding
+/// the scale would shift on every tick.
+struct PowerHistoryChart: View {
+    let points: [PowerHistoryPoint]
+
+    private static let windowSeconds: TimeInterval = 120
+    private static let slotCount = 60
+    private static let chartHeight: CGFloat = 40
+    private static let minimumFullScaleWatts: Double = 10
+
+    var body: some View {
+        let slots = TimeBuckets.slots(
+            points, timestamp: \.id,
+            window: Self.windowSeconds, slotCount: Self.slotCount, now: Date()
+        )
+        let watts = TimeBuckets.averaged(slots) { $0.watts }
+        let fullScale = Self.fullScale(for: watts.compactMap { $0 })
+
+        VStack(spacing: 3) {
+            ZStack(alignment: .bottom) {
+                // Half-scale rule, the same reference line the CPU and
+                // GPU charts draw. It matters more here, not less: those
+                // two are pinned to 0-100, where this chart's ceiling
+                // moves with the window, so the footer states the
+                // ceiling and the line marks its midpoint.
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(Color(nsColor: .separatorColor))
+                        .frame(height: 1)
+                    Spacer(minLength: 0)
+                }
+                .frame(height: Self.chartHeight / 2)
+
+                HStack(alignment: .bottom, spacing: 1) {
+                    ForEach(0..<Self.slotCount, id: \.self) { index in
+                        Rectangle()
+                            .fill(powerColor)
+                            .frame(height: barHeight(watts[index], fullScale: fullScale))
+                            .frame(maxWidth: .infinity, alignment: .bottom)
+                    }
+                }
+                .frame(height: Self.chartHeight, alignment: .bottom)
+            }
+            .frame(height: Self.chartHeight)
+
+            HStack {
+                Text("2 min ago")
+                Spacer()
+                // The scale is not fixed, so it has to be stated - a
+                // full-height bar means something different from one
+                // glance to the next.
+                Text("top \(wattsText(fullScale))")
+                Spacer()
+                Text("now")
+            }
+            .font(.system(size: 8).monospacedDigit())
+            .foregroundStyle(.tertiary)
+        }
+    }
+
+    static func fullScale(for watts: [Double]) -> Double {
+        let peak = watts.max() ?? 0
+        return max(minimumFullScaleWatts, (peak / 5).rounded(.up) * 5)
+    }
+
+    private func barHeight(_ watts: Double?, fullScale: Double) -> CGFloat {
+        guard let watts, watts > 0 else { return 0.5 }
+        return max(1, Self.chartHeight * min(watts / fullScale, 1))
+    }
+}
+
 /// The colored arcs for the memory ring: App / Wired / Compressed,
 /// each as its share of total RAM. Free stays the gray base track.
 private func memoryGaugeSegments(_ memory: MemoryUsageSnapshot) -> [GaugeSegment] {
@@ -806,6 +967,18 @@ private func batteryStatusText(_ battery: BatterySnapshot) -> String {
 /// 312 → "5:12".
 private func minutesText(_ minutes: Int) -> String {
     String(format: "%d:%02d", minutes / 60, minutes % 60)
+}
+
+/// 312 → "5 h 12 min", 45 → "45 min".
+///
+/// Deliberately not `minutesText`: "5:12" beside a "time remaining"
+/// row reads as a duration, but on its own it reads as a clock time.
+/// A span with no companion needs its units spelled out.
+private func durationText(_ minutes: Int) -> String {
+    let hours = minutes / 60, remainder = minutes % 60
+    if hours == 0 { return "\(remainder) min" }
+    if remainder == 0 { return "\(hours) h" }
+    return "\(hours) h \(remainder) min"
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1132,6 +1305,110 @@ private struct BatteryHistoryChart: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Power hover detail: 8 h draw, the individual rails, energy for the
+// day
+// ─────────────────────────────────────────────────────────────────
+
+struct PowerDetailColumn: View {
+    @EnvironmentObject var statsStore: StatsStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DetailColumnHeader(title: "Power Details")
+            StatSectionCard(title: "Draw, last 8 h") {
+                TrendChart(
+                    points: statsStore.history.recent(hours: 8),
+                    // Padded, not fixed: an M-series laptop idles near
+                    // 6 W and peaks around 30, and a 0-100 scale would
+                    // squash the whole day into the bottom third.
+                    value: { $0.systemPowerWatts },
+                    scale: .padded,
+                    color: { _ in powerColor },
+                    format: { wattsText($0) }
+                )
+            }
+            StatSectionCard(title: "Rails") {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Every row is one SMC rail, named as itself. The
+                    // temptation is to subtract them into "true system
+                    // power"; see PowerReader for why that would be a
+                    // guess.
+                    if let systemWatts = statsStore.power.systemWatts {
+                        LabeledValueRow(label: "System total",
+                                        value: wattsText(systemWatts))
+                    }
+                    if let batteryWatts = statsStore.power.batteryWatts {
+                        LabeledValueRow(label: batteryRailLabel,
+                                        value: wattsText(batteryWatts))
+                    }
+                    // Shown even at 0 W while unplugged: the row going
+                    // missing every time the cable comes out would make
+                    // the card resize on a charger event.
+                    if let adapterWatts = statsStore.power.adapterWatts {
+                        LabeledValueRow(label: "Adapter in",
+                                        value: wattsText(adapterWatts))
+                    }
+                    // Without this the two or three watts between the
+                    // system and battery rails looks like one of them
+                    // is broken. They are separate sensors sampled at
+                    // slightly different points in the power path, and
+                    // saying so costs one line.
+                    Text("Separate sensors, so they need not agree exactly.")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 1)
+                }
+            }
+            energyCard
+        }
+    }
+
+    /// The rail reads the same positive number either way, so the
+    /// direction has to come from the battery snapshot.
+    private var batteryRailLabel: String {
+        guard statsStore.battery.isPresent else { return "Battery rail" }
+        return statsStore.battery.isCharging ? "Battery charge" : "Battery draw"
+    }
+
+    /// Watt-hours are the point of keeping a day of history: a live
+    /// figure says what the machine is doing, this says what it cost.
+    @ViewBuilder
+    private var energyCard: some View {
+        let energy = PowerEnergySummary(rows: statsStore.history.recent(hours: 24))
+        StatSectionCard(title: "Energy, last 24 h") {
+            if energy.isEmpty {
+                Text("Collecting. Energy needs a full minute of samples.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    LabeledValueRow(
+                        label: "Used",
+                        value: String(format: "%.0f Wh", energy.wattHours)
+                    )
+                    LabeledValueRow(label: "Average", value: wattsText(energy.averageWatts))
+                    // Not just "Peak": the chart above also has a peak
+                    // in its footer, and that one is the highest
+                    // 15-minute bucket over 8 hours. Averaging flattens
+                    // spikes, so the two numbers differ by design and
+                    // the labels have to say which is which.
+                    LabeledValueRow(label: "Busiest minute",
+                                    value: wattsText(energy.peakWatts))
+                    // What the three figures above actually cover.
+                    // Sleep and time before the app started leave gaps,
+                    // and calling 6 hours of samples "the last 24
+                    // hours" would understate the machine's real draw.
+                    LabeledValueRow(
+                        label: "Recorded",
+                        value: durationText(energy.minutesCovered)
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -17,7 +17,9 @@ import Combine
 // To add a new stat (network, disk, battery, ...):
 //   1. Create a new reader class in Readers/ (see existing ones).
 //   2. Add a @Published property here for its snapshot.
-//   3. Call the reader inside refreshAllStats().
+//   3. Call the reader inside refreshFastStats() if it is a pure
+//      syscall, or refreshSlowStats() if it touches the SMC, a
+//      subprocess or the network.
 //   4. Add a section for it in StatsPanelView.
 // ─────────────────────────────────────────────────────────────────
 
@@ -39,6 +41,8 @@ final class StatsStore: ObservableObject {
     @Published var diskHistory: [DiskHistoryPoint] = []
     @Published var battery = BatterySnapshot()
     @Published var batteryHistory: [BatteryHistoryPoint] = []
+    @Published var power = PowerSnapshot()
+    @Published var powerHistory: [PowerHistoryPoint] = []
     /// Minutes since the Mac was last on AC power (nil while plugged in).
     @Published var timeOnBatteryMinutes: Int?
     @Published var fans: [FanReading] = []
@@ -64,6 +68,7 @@ final class StatsStore: ObservableObject {
     private let networkSpeedReader = NetworkSpeedReader()
     private let networkInfoReader = NetworkInfoReader()
     private let sensorReader = FanAndTemperatureReader()
+    private let powerReader = PowerReader()
 
     // Refresh timing, split into two lanes.
     //
@@ -118,6 +123,9 @@ final class StatsStore: ObservableObject {
     /// the CPU chart's two-minute window, so it keeps enough points to
     /// fill that at the panel-open cadence with room to spare.
     private let gpuHistoryCapacity = 120
+    /// Power is on the slow lane and its chart shares the CPU chart's
+    /// two-minute window, so it keeps the same depth as the GPU series.
+    private let powerHistoryCapacity = 120
 
     private let alertEngine = AlertEngine()
 
@@ -161,6 +169,9 @@ final class StatsStore: ObservableObject {
                 gpuHistory.append(GpuHistoryPoint(
                     id: row.date, utilizationPercent: utilization
                 ))
+            }
+            if let watts = row.systemPowerWatts {
+                powerHistory.append(PowerHistoryPoint(id: row.date, watts: watts))
             }
         }
     }
@@ -254,10 +265,26 @@ final class StatsStore: ObservableObject {
             // Sampled on the slow lane, so this repeats the last value
             // for a few fast ticks. Averaging a minute of those is the
             // same bargain the temperature series already makes.
-            gpuUtilization: gpu.isPresent ? gpu.utilizationPercent : nil
+            gpuUtilization: gpu.isPresent ? gpu.utilizationPercent : nil,
+            // Same bargain again: sampled on the slow lane, so a few
+            // fast ticks repeat one reading before the minute is
+            // averaged.
+            systemPowerWatts: power.totalWatts
         )
 
         menuBarTick &+= 1
+    }
+
+    /// Publish a power reading and extend the live chart. Split out
+    /// because it arrives from the sensor task rather than inline on the
+    /// slow lane like the other snapshots.
+    private func applyPower(_ snapshot: PowerSnapshot) {
+        power = snapshot
+        guard let watts = snapshot.totalWatts else { return }
+        powerHistory.append(PowerHistoryPoint(id: Date(), watts: watts))
+        if powerHistory.count > powerHistoryCapacity {
+            powerHistory.removeFirst(powerHistory.count - powerHistoryCapacity)
+        }
     }
 
     /// Called from applicationWillTerminate: the minute in progress
@@ -322,8 +349,18 @@ final class StatsStore: ObservableObject {
 
         // SMC calls talk to a kernel driver; run them off the main thread
         // so the UI never stutters, then publish results back on main.
+        //
+        // Power shares this task rather than getting its own: it is the
+        // same driver, and one task means the two never have SMC calls
+        // in flight at the same time. It is read first and published on
+        // its own hop because it costs ~3 ms against the sensor scan's
+        // first-run walk of every key on the machine.
         let sensorReader = self.sensorReader
+        let powerReader = self.powerReader
         Task.detached(priority: .utility) {
+            let power = powerReader.readSnapshot()
+            await MainActor.run { [weak self] in self?.applyPower(power) }
+
             let fanDetails = sensorReader.readFanDetails()
             let temperatureReadings = sensorReader.readTemperatures()
             let averages = FanAndTemperatureReader.averageTemperatures(from: temperatureReadings)

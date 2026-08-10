@@ -46,6 +46,11 @@ struct HistoryMinute: Codable, Identifiable {
     /// is a valid nil, where a non-optional would fail the whole file
     /// and throw away the user's day of history.
     var gpuUtilization: Double?
+    /// Total system power in watts. Optional for the same three
+    /// reasons as `gpuUtilization`: Macs that publish no SMC power rail
+    /// have no reading, a zero would be a lie, and files written before
+    /// this series existed must still decode.
+    var systemPowerWatts: Double?
 
     var id: Int { m }
     var date: Date { Date(timeIntervalSince1970: TimeInterval(m) * 60) }
@@ -86,6 +91,7 @@ final class HistoryStore {
                 networkDown: Double,
                 cpuTemperature: Double?,
                 gpuUtilization: Double?,
+                systemPowerWatts: Double?,
                 now: Date = Date()) {
         let minute = Int(now.timeIntervalSince1970 / 60)
 
@@ -101,7 +107,8 @@ final class HistoryStore {
             networkUp: networkUp,
             networkDown: networkDown,
             cpuTemperature: cpuTemperature,
-            gpuUtilization: gpuUtilization
+            gpuUtilization: gpuUtilization,
+            systemPowerWatts: systemPowerWatts
         ))
     }
 
@@ -119,7 +126,8 @@ final class HistoryStore {
             networkUp: pending.reduce(0) { $0 + $1.networkUp } / count,
             networkDown: pending.reduce(0) { $0 + $1.networkDown } / count,
             cpuTemperature: averageOfPresent(\.cpuTemperature),
-            gpuUtilization: averageOfPresent(\.gpuUtilization)
+            gpuUtilization: averageOfPresent(\.gpuUtilization),
+            systemPowerWatts: averageOfPresent(\.systemPowerWatts)
         )
 
         minutes.append(row)
