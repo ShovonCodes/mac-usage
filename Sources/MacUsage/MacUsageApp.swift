@@ -152,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = MenuBarStrip.make(
             readout: readout,
             segments: MenuBarSettings.visibleSegments,
-            alerting: !statsStore.activeAlerts.isEmpty
+            alerts: statsStore.activeAlerts.compactMap { AlertRule(rawValue: $0.id) }
         )
     }
 

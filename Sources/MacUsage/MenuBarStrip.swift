@@ -116,6 +116,37 @@ enum MenuBarSettings {
     }
 }
 
+extension AlertRule {
+    /// nil: the strip never shows this reading, so its alert is a dot.
+    var stripSegment: MenuBarSegment? {
+        switch self {
+        case .cpu: return .cpu
+        case .memoryPressure: return .memory
+        case .cpuTemperature: return .temperature
+        case .batteryLow: return nil
+        }
+    }
+}
+
+/// Red segments for alerts whose reading is on screen, a dot for the rest.
+struct MenuBarAlertMarks: Equatable {
+    private(set) var redSegments: Set<MenuBarSegment> = []
+    private(set) var showsDot = false
+
+    /// `drawn` excludes enabled segments with no reading: they take no width.
+    init(firing: [AlertRule], drawn: [MenuBarSegment]) {
+        for rule in firing {
+            if let segment = rule.stripSegment, drawn.contains(segment) {
+                redSegments.insert(segment)
+            } else {
+                showsDot = true
+            }
+        }
+    }
+
+    var isEmpty: Bool { redSegments.isEmpty && !showsDot }
+}
+
 /// The values one redraw needs. Assembled by the AppDelegate from the
 /// store so the drawing code stays free of any view model.
 struct MenuBarReadout {
@@ -179,52 +210,48 @@ enum MenuBarStrip {
     /// drifting among the other menu bar items.
     static func make(readout: MenuBarReadout,
                      segments: [MenuBarSegment],
-                     alerting: Bool) -> NSImage {
-        let parts = segments.compactMap { part(for: $0, readout: readout) }
-        guard !parts.isEmpty else { return glyphOnly(alerting: alerting) }
+                     alerts: [AlertRule]) -> NSImage {
+        let parts = segments.compactMap { segment in
+            part(for: segment, readout: readout).map { (segment, $0) }
+        }
+        let marks = MenuBarAlertMarks(firing: alerts, drawn: parts.map(\.0))
+        guard !parts.isEmpty else { return glyphOnly(alerting: marks.showsDot) }
 
-        // The alert badge normally lives on the glyph. Without one it
-        // becomes a mark inside the leading rule, so an alert is still
-        // visible even when the metric that raised it has no segment
-        // switched on.
-        let alertWidth = alerting ? alertMarkWidth + innerGap : 0
+        let alertWidth = marks.showsDot ? alertMarkWidth + innerGap : 0
         let width = rulePadding * 2 + alertWidth
-            + parts.reduce(0) { $0 + $1.width } + segmentGap * CGFloat(parts.count - 1)
+            + parts.reduce(0) { $0 + $1.1.width } + segmentGap * CGFloat(parts.count - 1)
 
         let image = NSImage(size: NSSize(width: width, height: glyphSize),
                             flipped: false) { _ in
-            // A template image is recolored by macOS, so black is
-            // right whatever the menu bar looks like. The alert mark
-            // needs real red, which forfeits template treatment, and
-            // then the drawing has to match the menu bar itself.
-            let color: NSColor
-            if alerting {
-                let isDarkMenuBar = NSAppearance.currentDrawing()
-                    .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                color = isDarkMenuBar ? .white : .black
-            } else {
-                color = .black
-            }
+            // Any red forfeits template recoloring, so match the bar by hand.
+            let isDarkMenuBar = NSAppearance.currentDrawing()
+                .bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let color: NSColor = marks.isEmpty || !isDarkMenuBar ? .black : .white
+            let red = alertRed(isDarkMenuBar: isDarkMenuBar)
 
             drawRule(at: 0, color: color)
             drawRule(at: width - ruleWidth, color: color)
 
             var x = rulePadding
-            if alerting {
+            if marks.showsDot {
                 drawAlertMark(at: x)
                 x += alertMarkWidth + innerGap
             }
-            for (index, part) in parts.enumerated() {
+            for (index, (segment, part)) in parts.enumerated() {
                 if index > 0 { x += segmentGap }
-                part.draw(x, color)
+                if marks.redSegments.contains(segment) {
+                    drawGlowing(part, at: x, color: red)
+                } else {
+                    part.draw(x, color)
+                }
                 x += part.width
             }
             return true
         }
 
-        image.isTemplate = !alerting
+        image.isTemplate = marks.isEmpty
         image.accessibilityDescription = accessibilityDescription(
-            readout: readout, segments: segments, alerting: alerting
+            readout: readout, segments: segments, alerting: !marks.isEmpty
         )
         return image
     }
@@ -247,6 +274,24 @@ enum MenuBarStrip {
         image.accessibilityDescription = alerting
             ? "Mac Usage: attention needed" : "Mac Usage"
         return image
+    }
+
+    /// One red per bar appearance, as in Theme: none clears 4.5:1 on both.
+    private static func alertRed(isDarkMenuBar: Bool) -> NSColor {
+        isDarkMenuBar
+            ? NSColor(srgbRed: 1.00, green: 0.42, blue: 0.38, alpha: 1)  // #FF6B61
+            : NSColor(srgbRed: 0.75, green: 0.16, blue: 0.11, alpha: 1)  // #C0281B
+    }
+
+    private static func drawGlowing(_ part: Part, at x: CGFloat, color: NSColor) {
+        NSGraphicsContext.saveGraphicsState()
+        let glow = NSShadow()
+        glow.shadowColor = color.withAlphaComponent(0.55)
+        glow.shadowBlurRadius = 3
+        glow.shadowOffset = .zero
+        glow.set()
+        part.draw(x, color)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     /// A hairline bracket. Faint on purpose: it should group the

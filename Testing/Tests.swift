@@ -545,6 +545,61 @@ do {
     check("an idle minute is 0, not absent", HistoryMinute(m: 100).cpuBusy == 0)
 }
 
+section("MenuBarAlertMarks: red segment where shown, dot where not")
+do {
+    let drawn: [MenuBarSegment] = [.cpu, .memory, .network]
+    check("every rule with a reading in the strip maps to its segment",
+          AlertRule.cpu.stripSegment == .cpu
+          && AlertRule.memoryPressure.stripSegment == .memory
+          && AlertRule.cpuTemperature.stripSegment == .temperature)
+    check("battery has no segment", AlertRule.batteryLow.stripSegment == nil)
+
+    let quiet = MenuBarAlertMarks(firing: [], drawn: drawn)
+    check("no alerts marks nothing", quiet.isEmpty)
+
+    let one = MenuBarAlertMarks(firing: [.cpu], drawn: drawn)
+    check("a shown alert turns its segment red", one.redSegments == [.cpu])
+    check("a shown alert needs no dot", !one.showsDot)
+
+    let two = MenuBarAlertMarks(firing: [.cpu, .memoryPressure], drawn: drawn)
+    check("two shown alerts turn both red, still no dot",
+          two.redSegments == [.cpu, .memory] && !two.showsDot)
+
+    let hidden = MenuBarAlertMarks(firing: [.cpuTemperature], drawn: drawn)
+    check("an alert for a switched-off segment is a dot",
+          hidden.showsDot && hidden.redSegments.isEmpty)
+
+    let unmapped = MenuBarAlertMarks(firing: [.batteryLow], drawn: drawn)
+    check("an alert with no segment is always a dot",
+          unmapped.showsDot && unmapped.redSegments.isEmpty)
+
+    let mixed = MenuBarAlertMarks(firing: [.memoryPressure, .batteryLow], drawn: drawn)
+    check("mixed shown and hidden gives both red and dot",
+          mixed.redSegments == [.memory] && mixed.showsDot)
+
+    let stripOff = MenuBarAlertMarks(firing: [.cpu], drawn: [])
+    check("strip off falls back to the dot", stripOff.showsDot && stripOff.redSegments.isEmpty)
+}
+
+section("MenuBarStrip: template only while nothing is red")
+do {
+    let readout = MenuBarReadout(cpuBusyPercent: 95, memoryPressurePercent: 40)
+    let segments: [MenuBarSegment] = [.cpu, .memory, .temperature]
+    let calm = MenuBarStrip.make(readout: readout, segments: segments, alerts: [])
+    check("no alert stays a template", calm.isTemplate)
+    let red = MenuBarStrip.make(readout: readout, segments: segments, alerts: [.cpu])
+    check("a red segment is not a template", !red.isTemplate)
+    check("a red segment adds no width", red.size.width == calm.size.width,
+          "\(red.size.width) vs \(calm.size.width)")
+    // Temperature is switched on but has no reading, so it is not drawn.
+    let noSensor = MenuBarStrip.make(readout: readout, segments: segments,
+                                     alerts: [.cpuTemperature])
+    check("an alert for an undrawn segment widens the strip by the dot",
+          noSensor.size.width > calm.size.width)
+    check("the gauge alone keeps its badge when the strip is off",
+          !MenuBarStrip.make(readout: readout, segments: [], alerts: [.cpu]).isTemplate)
+}
+
 print("\n\(checks - failures)/\(checks) passed")
 if failures > 0 { exit(1) }
 }
